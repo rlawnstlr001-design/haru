@@ -55,6 +55,13 @@ export async function registerPush(onToken) {
     let p = await Push.checkPermissions();
     if (p.receive !== 'granted') p = await Push.requestPermissions();
     if (p.receive !== 'granted') return 'denied';
+    // 안드로이드: 전용 채널(중요도 최고 = 소리·진동·화면 위 팝업). 없으면 FCM "기타" 채널로 가서 갤럭시에선 조용히 온다
+    if (platform === 'android') {
+      await Push.createChannel({
+        id: 'anbu', name: '안부 알림', description: '부모님 안부 도착, 아직 소식 없음 알림',
+        importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#2A9D8F',
+      }).catch(() => {});
+    }
     await Push.addListener('registration', ({ value }) => onToken(value, platform));
     await Push.register();
     return 'requested';
