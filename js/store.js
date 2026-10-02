@@ -1,4 +1,4 @@
-// 하루안부 데이터 계층 — Supabase RPC(테이블 직접 접근은 RLS로 차단) + 실시간 "바뀜" 신호
+// 안부한장 데이터 계층 — Supabase RPC(테이블 직접 접근은 RLS로 차단) + 실시간 "바뀜" 신호
 // 링크가 곧 권한: 가족 id(자녀용) / 부모 토큰(부모님 화면)
 
 const LS = {
@@ -76,6 +76,9 @@ export class Store {
     const on = await this.#rpc('hb_heart', { p_family: fid, p_checkin: checkinId, p_member: memberId });
     this.#ping(fid);
     return on;
+  }
+  async registerPush(fid, memberId, token, platform) {
+    try { await this.#rpc('hb_register_push', { p_family: fid, p_member: memberId, p_token: token, p_platform: platform }); } catch { /* 다음 실행 때 다시 */ }
   }
   async log(fid, type) {
     try { await this.#rpc('hb_log_event', { p_family: fid, p_type: type, p_device: deviceId() }); } catch { /* 지표 실패는 무시 */ }

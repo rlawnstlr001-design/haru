@@ -1,9 +1,10 @@
-// 하루안부(가칭) 파일럿 — 화면 (해시 라우팅)
+// 안부한장 — 화면 (해시 라우팅)
 //  #/            홈: 가족 방 만들기 · 최근 방
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies } from './store.js?v=202610021255';
-import { esc, toast, share, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610021255';
+import { createStore, me, recentFamilies } from './store.js?v=202610021317';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610021317';
+import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative } from './native.js?v=202610021317';
 
 const $app = document.getElementById('app');
 let store;
@@ -15,7 +16,9 @@ const MOODS = [
   { id: 'tired', emoji: '😮‍💨', label: '피곤해요' },
 ];
 const moodOf = (id) => MOODS.find((m) => m.id === id);
-const base = () => location.href.split('#')[0];
+const base = siteBase;
+// 앱이면 휴대폰 공유창, 웹이면 브라우저 공유 → 복사
+const share = async (p, msg) => (await nativeShare(p)) || webShare(p, msg);
 const familyLink = (fid) => `${base()}#/f/${fid}`;
 const parentLink = (tok) => `${base()}#/p/${tok}`;
 
@@ -46,7 +49,7 @@ function renderHome() {
   const recent = recentFamilies();
   $app.innerHTML = `
     <div class="hero">
-      <span class="brand">💛 하루안부 <small>가칭 · 파일럿</small></span>
+      <span class="brand">💛 안부한장 <small>베타</small></span>
       <h1>부모님의 오늘,<br>한 장으로 받아보세요</h1>
       <p>부모님은 링크만 누르면 돼요. 버튼 한 번이나 사진 한 장이 곧 안부예요. 형제들도 같이 봐요.</p>
     </div>
@@ -62,7 +65,7 @@ function renderHome() {
     </form>
     ${recent.length ? `<div class="card recent"><b>내 가족 방</b>${recent.map((f) =>
       `<a href="#/f/${esc(f.id)}"><span>${esc(f.parentName)}의 하루</span><span class="muted small">›</span></a>`).join('')}</div>` : ''}
-    <p class="muted small foot">파일럿 기간에는 무료예요 · <a href="privacy.html">개인정보처리방침</a></p>`;
+    <p class="muted small foot"><a href="privacy.html">개인정보처리방침</a></p>`;
 
   const form = $app.querySelector('#create');
   $app.querySelectorAll('[data-pn]').forEach((b) => {
@@ -150,7 +153,7 @@ async function renderFamily(fid) {
         <button class="btn grow" id="send-parent2">${esc(P)} 링크 다시 보내기</button>
       </div>
     </section>
-    <p class="muted small foot">하루안부(가칭) 파일럿 · <a href="privacy.html">개인정보처리방침</a></p>`;
+    <p class="muted small foot">안부한장 · <a href="privacy.html">개인정보처리방침</a></p>`;
 
   const sendParent = () => {
     store.log(fid, 'parent_link_shared');
@@ -160,7 +163,7 @@ async function renderFamily(fid) {
   };
   const invite = () => {
     store.log(fid, 'invite_shared');
-    share({ text: `${P}의 하루를 같이 봐요 💛 (하루안부)`, url: familyLink(fid) }, '초대 링크를 복사했어요');
+    share({ text: `${P}의 하루를 같이 봐요 💛 (안부한장)`, url: familyLink(fid) }, '초대 링크를 복사했어요');
   };
   $app.querySelector('#send-parent')?.addEventListener('click', sendParent);
   $app.querySelector('#send-parent2')?.addEventListener('click', sendParent);
@@ -172,6 +175,10 @@ async function renderFamily(fid) {
   });
   bindHearts(f, myId);
   loadPhotos();
+  if (isApp && !sessionStorage.getItem(`haru:push:${fid}`)) {
+    sessionStorage.setItem(`haru:push:${fid}`, '1');
+    registerPush((token, plat) => store.registerPush(fid, myId, token, plat));
+  }
 }
 
 function checkinCard(c, f, myId) {
@@ -217,7 +224,7 @@ function showPhoto(url) {
 // 링크로 처음 들어온 형제: 이름 고르거나 새로 참여
 function renderJoin(f) {
   $app.innerHTML = `
-    <div class="hero"><span class="brand">💛 하루안부</span>
+    <div class="hero"><span class="brand">💛 안부한장</span>
       <h1>${esc(f.parentName)}의 하루를<br>같이 볼까요?</h1>
       <p>이름을 고르거나 적어 주세요. 이 폰에 기억해 둘게요.</p></div>
     <div class="card stack">
@@ -260,7 +267,8 @@ async function renderParent(token, justSent = false) {
         </div>` : ''}
       <p class="ask">${sent ? '더 보내고 싶으시면 눌러 주세요' : '아래 버튼 하나만 눌러 주세요'}</p>
       <div class="moods">${MOODS.map((m) => `<button class="mood-btn" data-mood="${m.id}"><span>${m.emoji}</span>${m.label}</button>`).join('')}</div>
-      <button class="big-btn" id="photo">📷 사진 한 장 보내기</button>
+      ${isApp ? `<div class="two"><button class="big-btn" data-src="camera">📷 사진 찍기</button><button class="big-btn" data-src="gallery">🖼 앨범에서</button></div>`
+        : '<button class="big-btn" data-src="any">📷 사진 한 장 보내기</button>'}
       <form id="msg" class="msg-form">
         <textarea name="m" maxlength="100" rows="2" placeholder="한마디 남기기 (예: 오늘 장 보고 왔다)"></textarea>
         <button class="big-btn">✉️ 한마디 보내기</button>
@@ -273,7 +281,7 @@ async function renderParent(token, justSent = false) {
     $app.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     try {
       await store.checkin(token, v.familyId, data);
-      try { navigator.vibrate?.(200); } catch { /* 진동 없음 */ }
+      haptic(250);
       toast(`${label} 보냈어요`);
       await renderParent(token, true);
     } catch (e) {
@@ -284,8 +292,9 @@ async function renderParent(token, justSent = false) {
   $app.querySelectorAll('[data-mood]').forEach((b) => {
     b.onclick = () => send({ mood: b.dataset.mood }, moodOf(b.dataset.mood).label);
   });
-  $app.querySelector('#photo').onclick = async () => {
-    const raw = await pickPhoto();
+  $app.querySelectorAll('[data-src]').forEach((b) => { b.onclick = () => sendPhoto(b.dataset.src); });
+  async function sendPhoto(src) {
+    const raw = src === 'any' ? await pickPhoto() : await pickPhotoNative(src);
     if (!raw) return;
     let path;
     try {
@@ -293,7 +302,7 @@ async function renderParent(token, justSent = false) {
       path = await store.uploadPhoto(v.familyId, await compressImage(raw));
     } catch { return toast('사진을 보내지 못했어요. 다시 해 주세요'); }
     send({ photo: path }, '사진');
-  };
+  }
   $app.querySelector('#msg').onsubmit = (e) => {
     e.preventDefault();
     const m = e.target.m.value.trim();
@@ -307,5 +316,14 @@ async function renderParent(token, justSent = false) {
   store = await createStore(window.HARU_CONFIG);
   window.__haru = { store };
   addEventListener('hashchange', route);
+  initNative({
+    onOpenHash: (h) => { if (location.hash !== h) location.hash = h; else route(); },
+    onBack: () => {
+      const v = document.querySelector('.photo-viewer');
+      if (v) { v.remove(); return true; }
+      if (location.hash && location.hash !== '#/') { history.back(); return true; }
+      return false;
+    },
+  });
   route();
 })();
