@@ -28,6 +28,8 @@ export function rememberFamily(f) {
   LS.set('haru:recent', list.slice(0, 10));
 }
 export const recentFamilies = () => LS.get('haru:recent', []);
+// 이 휴대폰의 시간대 (해외 사는 자녀 → 밤에는 조용한 알림)
+export const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } };
 
 export class Store {
   #sb;
@@ -78,7 +80,16 @@ export class Store {
     return on;
   }
   async registerPush(fid, memberId, token, platform) {
-    try { await this.#rpc('hb_register_push', { p_family: fid, p_member: memberId, p_token: token, p_platform: platform }); } catch { /* 다음 실행 때 다시 */ }
+    try {
+      await this.#rpc('hb_register_push', { p_family: fid, p_member: memberId, p_token: token, p_platform: platform, p_tz: localTz() });
+    } catch { /* 다음 실행 때 다시 */ }
+  }
+  // 내 이름·알림 설정 (바꾸지 않는 값은 null)
+  async updateMember(fid, memberId, { name = null, notifyCheckin = null, notifyLate = null } = {}) {
+    await this.#rpc('hb_update_member', {
+      p_family: fid, p_member: memberId, p_name: name, p_notify_checkin: notifyCheckin, p_notify_late: notifyLate, p_tz: localTz(),
+    });
+    this.#ping(fid);
   }
   async log(fid, type) {
     try { await this.#rpc('hb_log_event', { p_family: fid, p_type: type, p_device: deviceId() }); } catch { /* 지표 실패는 무시 */ }

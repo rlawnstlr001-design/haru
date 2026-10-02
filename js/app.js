@@ -1,10 +1,11 @@
 // 안부한장 — 화면 (해시 라우팅)
 //  #/            홈: 가족 방 만들기 · 최근 방
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
+//  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies } from './store.js?v=202610021441';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610021441';
-import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative } from './native.js?v=202610021441';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610021501';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610021501';
+import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative } from './native.js?v=202610021501';
 
 const $app = document.getElementById('app');
 let store;
@@ -29,6 +30,17 @@ function kstNowMinutes() {
   return h * 60 + m;
 }
 const toMinutes = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+// 마감 시각 고르기 (오전 7시 ~ 오후 9시)
+function deadlineOptions(selected = '12:00') {
+  const hours = Array.from({ length: 15 }, (_, i) => i + 7);
+  const opts = hours.map((h) => `${String(h).padStart(2, '0')}:00`);
+  if (!opts.includes(selected)) opts.push(selected);
+  return opts.sort().map((v) => {
+    const [h, m] = v.split(':').map(Number);
+    const label = `${h < 12 ? '오전' : '오후'} ${h > 12 ? h - 12 : h}시${m ? ` ${m}분` : ''}`;
+    return `<option value="${v}" ${v === selected ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+}
 
 // ───────── 라우터 ─────────
 async function route() {
@@ -36,6 +48,7 @@ async function route() {
   const h = location.hash.slice(1);
   let m;
   try {
+    if ((m = h.match(/^\/f\/([\w-]+)\/s$/))) return await renderSettings(m[1]);
     if ((m = h.match(/^\/f\/([\w-]+)/))) return await renderFamily(m[1]);
     if ((m = h.match(/^\/p\/([\w-]+)/))) return await renderParent(m[1]);
     renderHome();
@@ -59,8 +72,7 @@ function renderHome() {
         <input class="input" name="parentName" maxlength="20" placeholder="직접 입력 (예: 우리 엄마)" required></div>
       <label class="field"><span>내 이름</span><input class="input" name="childName" maxlength="20" placeholder="예: 준식" required></label>
       <label class="field"><span>이 시각까지 소식이 없으면 '아직'으로 표시</span>
-        <select class="input" name="deadline">${Array.from({ length: 13 }, (_, i) => i + 8).map((h) =>
-          `<option value="${String(h).padStart(2, '0')}:00" ${h === 12 ? 'selected' : ''}>${h < 12 ? '오전' : '오후'} ${h > 12 ? h - 12 : h}시</option>`).join('')}</select></label>
+        <select class="input" name="deadline">${deadlineOptions('12:00')}</select></label>
       <button class="btn primary block">가족 방 만들기</button>
     </form>
     ${recent.length ? `<div class="card recent"><b>내 가족 방</b>${recent.map((f) =>
@@ -117,6 +129,7 @@ async function renderFamily(fid) {
     <header class="top">
       <a class="icon-btn" href="#/" aria-label="처음으로">←</a>
       <h1 class="grow">${esc(P)}의 하루</h1>
+      <a class="icon-btn" href="#/f/${esc(fid)}/s" aria-label="설정">⚙</a>
     </header>
 
     ${fresh ? `<div class="card setup">
@@ -173,6 +186,7 @@ async function renderFamily(fid) {
     store.log(fid, 'ask_shared');
     share({ text: `${P}, 오늘 하루 어떠세요? 😊\n버튼 한 번만 눌러 주세요 💛`, url: parentLink(f.parentToken) }, '부탁 메시지를 복사했어요');
   });
+  $app.querySelector('a[aria-label="설정"]').addEventListener('click', () => sessionStorage.setItem('haru:settingsFrom', fid));
   bindHearts(f, myId);
   loadPhotos();
   if (isApp && !sessionStorage.getItem(`haru:push:${fid}`)) {
@@ -219,6 +233,65 @@ function showPhoto(url) {
   v.innerHTML = `<img src="${esc(url)}" alt="사진"><span>눌러서 닫기</span>`;
   v.onclick = () => v.remove();
   document.body.append(v);
+}
+
+// ───────── 설정 ─────────
+async function renderSettings(fid) {
+  const f = await store.getFamily(fid);
+  const myId = me.get(fid);
+  const mine = f.members.find((m) => m.id === myId);
+  if (!mine) { location.replace(`#/f/${fid}`); return; }
+  const tz = localTz();
+  const away = tz && tz !== 'Asia/Seoul';
+  $app.innerHTML = `
+    <header class="top">
+      <a class="icon-btn" href="#/f/${esc(fid)}" aria-label="돌아가기">←</a>
+      <h1 class="grow">설정</h1>
+    </header>
+    <form id="settings">
+      <section class="card stack">
+        <b>가족 방</b>
+        <label class="field"><span>부모님 호칭</span>
+          <input class="input" name="parentName" maxlength="20" value="${esc(f.parentName)}" required></label>
+        <label class="field"><span>이 시각까지 소식이 없으면 '아직'으로 표시 (한국 시간)</span>
+          <select class="input" name="deadline">${deadlineOptions(f.deadline)}</select></label>
+        <p class="muted small">가족 방 설정은 형제 모두에게 똑같이 바뀌어요.</p>
+      </section>
+      <section class="card stack">
+        <b>나</b>
+        <label class="field"><span>내 이름</span>
+          <input class="input" name="myName" maxlength="20" value="${esc(mine.name)}" required></label>
+        <div>
+          <label class="toggle"><span><b>안부 도착 알림</b><small>${esc(josa(f.parentName, '이/가'))} 안부를 보내면 바로 알려 드려요</small></span>
+            <input type="checkbox" name="notifyCheckin" ${mine.notifyCheckin !== false ? 'checked' : ''}></label>
+          <label class="toggle"><span><b>'아직 소식 없음' 알림</b><small>마감이 지나도 소식이 없으면 알려 드려요. 1시간이 더 지나면 다른 형제에게도 가요</small></span>
+            <input type="checkbox" name="notifyLate" ${mine.notifyLate !== false ? 'checked' : ''}></label>
+        </div>
+        <p class="muted small">${isApp
+          ? `밤 10시~아침 8시(이 휴대폰 시간)에는 소리 없이 조용히 와요.${away ? ` 지금 이 휴대폰은 ${esc(tz)} 시간이에요.` : ''}`
+          : '알림은 안부한장 앱에서 받을 수 있어요.'}</p>
+      </section>
+      <button class="btn primary block" style="margin-top:14px">저장</button>
+    </form>`;
+
+  const form = $app.querySelector('#settings');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.primary');
+    btn.disabled = true;
+    try {
+      const parentName = form.parentName.value.trim();
+      const deadline = form.deadline.value;
+      if (parentName !== f.parentName || deadline !== f.deadline) await store.updateFamily(fid, { parentName, deadline });
+      await store.updateMember(fid, myId, {
+        name: form.myName.value.trim(), notifyCheckin: form.notifyCheckin.checked, notifyLate: form.notifyLate.checked,
+      });
+      toast('저장했어요');
+      // 가족 화면의 ⚙로 들어왔으면 뒤로(기록이 쌓이지 않게), 링크로 바로 왔으면 가족 화면으로
+      if (sessionStorage.getItem('haru:settingsFrom') === fid) history.back();
+      else location.replace(`#/f/${fid}`);
+    } catch (err) { toast(err.message); btn.disabled = false; }
+  };
 }
 
 // 링크로 처음 들어온 형제: 이름 고르거나 새로 참여

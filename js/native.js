@@ -61,6 +61,11 @@ export async function registerPush(onToken) {
         id: 'anbu', name: '안부 알림', description: '부모님 안부 도착, 아직 소식 없음 알림',
         importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#2A9D8F',
       }).catch(() => {});
+      // 밤 10시~아침 8시(이 휴대폰 시간)에 오는 알림 — 소리·진동 없이 알림창에만
+      await Push.createChannel({
+        id: 'anbu_quiet', name: '안부 알림 (밤 시간)', description: '밤에는 소리 없이 조용히 와요',
+        importance: 2, visibility: 1, vibration: false,
+      }).catch(() => {});
     }
     await Push.addListener('registration', ({ value }) => onToken(value, platform));
     await Push.register();
