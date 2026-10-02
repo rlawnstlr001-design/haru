@@ -46,9 +46,11 @@ export async function pickPhotoNative(source) {
   } catch { return null; }
 }
 
-// 푸시 알림 등록 → 토큰을 서버에 저장 (Firebase 연결 후 동작. 연결 전에는 조용히 실패)
+// 푸시 알림 등록 → 토큰을 서버에 저장.
+// Firebase(google-services.json) 없이 register()를 부르면 안드로이드 앱이 죽으므로 config.js의 push 스위치로 막는다.
 export async function registerPush(onToken) {
   if (!isApp) return 'unsupported';
+  if (!window.HARU_CONFIG?.push) return 'off';
   try {
     let p = await Push.checkPermissions();
     if (p.receive !== 'granted') p = await Push.requestPermissions();
