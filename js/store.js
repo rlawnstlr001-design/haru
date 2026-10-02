@@ -119,6 +119,8 @@ export class Store {
 }
 
 export async function createStore(config) {
-  const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+  // 앱은 js/supabase.js(빌드 때 내장)가 window.supabase를 만든다 → 인터넷 없이 켜도 화면이 뜬다. 웹은 CDN
+  const { createClient } = window.supabase?.createClient ? window.supabase
+    : await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
   return new Store(createClient(config.supabaseUrl, config.supabaseAnonKey));
 }
