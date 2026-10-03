@@ -59,7 +59,7 @@ export async function registerPush(onToken) {
     if (platform === 'android') {
       await Push.createChannel({
         id: 'anbu', name: '안부 알림', description: '부모님 안부 도착, 아직 소식 없음 알림',
-        importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#2A9D8F',
+        importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#D45D72',
       }).catch(() => {});
       // 밤 10시~아침 8시(이 휴대폰 시간)에 오는 알림 — 소리·진동 없이 알림창에만
       await Push.createChannel({
@@ -78,7 +78,7 @@ export function initNative({ onOpenHash, onBack }) {
   if (!isApp) return;
   document.documentElement.classList.add('is-app', `is-${platform}`);
   StatusBar.setStyle({ style: 'LIGHT' }).catch(() => {});
-  if (platform === 'android') StatusBar.setBackgroundColor({ color: '#FFFBF3' }).catch(() => {});
+  if (platform === 'android') StatusBar.setBackgroundColor({ color: '#F3EEE6' }).catch(() => {});
   const open = (url) => { try { onOpenHash(new URL(url).hash || '#/'); } catch { /* 무시 */ } };
   App.addListener('appUrlOpen', ({ url }) => open(url));
   App.getLaunchUrl().then((r) => r?.url && open(r.url)).catch(() => {});
