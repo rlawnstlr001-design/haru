@@ -299,3 +299,9 @@ html.landing #app { display: none; }
   .lp-faq { max-width: 760px; }
 }
 .kids-jump { display: block; width: 100%; border: 0; text-align: left; cursor: pointer; margin: 0 0 14px; padding: 12px 16px; border-radius: 16px; background: var(--rose-soft); color: var(--rose); font-weight: 800; font-size: 18px; text-decoration: none; }
+
+/* ── 부모님 화면: 매일 알림 받기 ── */
+.pp-card { margin-top: 22px; background: var(--sun-soft); border-radius: 20px; padding: 18px; }
+.pp-title { font-family: var(--serif); font-size: 21px; font-weight: 700; margin: 0; }
+.pp-desc { margin: 6px 0 12px; font-size: 17px; word-break: keep-all; }
+.pp-btn { min-height: 60px; font-size: 20px; }

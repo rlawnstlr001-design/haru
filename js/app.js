@@ -4,9 +4,9 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610041012';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610041012';
-import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp } from './native.js?v=202610041012';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610041057';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610041057';
+import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp } from './native.js?v=202610041057';
 
 const $app = document.getElementById('app');
 let store;
@@ -338,7 +338,7 @@ async function renderFamily(fid) {
               <p class="muted small">${late ? `마감 ${esc(f.deadline)}이 지났어요. 전화 한 통 어떠세요?` : `마감 ${esc(f.deadline)} · 부탁하면 대부분 금방 보내 주세요`}</p>
             </div>
           </article>
-          <button class="btn primary block" id="ask">💌 오늘 안부 부탁하기</button>`}
+          <button class="btn primary block" id="ask">${f.parentDevices ? `📳 ${esc(P)} 폰으로 안부 부탁하기` : '💌 오늘 안부 부탁하기'}</button>`}
     </section>
 
     <section class="block talk">
@@ -378,9 +378,22 @@ async function renderFamily(fid) {
   $app.querySelector('#send-parent2')?.addEventListener('click', sendParent);
   $app.querySelector('#invite')?.addEventListener('click', invite);
   $app.querySelector('#invite2')?.addEventListener('click', invite);
-  $app.querySelector('#ask')?.addEventListener('click', () => {
-    store.log(fid, 'ask_shared');
-    share({ text: `${P}, 오늘 하루 어떠세요? 😊\n버튼 한 번만 눌러 주세요 💛`, url: parentLink(f.parentToken) }, '부탁 메시지를 복사했어요');
+  // 부모님 폰이 연결돼 있으면 알림으로 바로, 아니면(또는 실패하면) 지금처럼 링크 공유
+  $app.querySelector('#ask')?.addEventListener('click', async (e) => {
+    const shareAsk = () => {
+      store.log(fid, 'ask_shared');
+      share({ text: `${P}, 오늘 하루 어떠세요? 😊\n버튼 한 번만 눌러 주세요 💛`, url: parentLink(f.parentToken) }, '부탁 메시지를 복사했어요');
+    };
+    if (!f.parentDevices) return shareAsk();
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const r = await store.askParent(fid, myId);
+      if (!r.pushed) return shareAsk();
+      haptic(120);
+      toast(r.recent ? `방금 ${josa(P, '을/를')} 불렀어요. 조금만 기다려 주세요` : `${P} 폰으로 알림을 보냈어요`);
+    } catch { shareAsk(); }
+    finally { btn.disabled = false; }
   });
   $app.querySelector('a[aria-label="설정"]').addEventListener('click', () => sessionStorage.setItem('haru:settingsFrom', fid));
   bindHearts(f, myId);
@@ -491,6 +504,7 @@ async function renderSettings(fid) {
   const mine = f.members.find((m) => m.id === myId);
   if (!mine) { replaceHash(`#/f/${fid}`); return; }
   const tz = localTz();
+  const P = f.parentName;
   const away = tz && tz !== 'Asia/Seoul';
   $app.innerHTML = `
     <header class="mast">
@@ -507,6 +521,18 @@ async function renderSettings(fid) {
         <label class="field"><span>이 시각까지 소식이 없으면 알려 드려요 (한국 시간)</span>
           <select class="input" name="deadline">${deadlineOptions(f.deadline)}</select></label>
         <p class="muted small">가족 방 설정은 형제 모두에게 똑같이 바뀌어요.</p>
+      </section>
+      <section class="group">
+        <h2>${esc(P)} 폰 알림</h2>
+        <div style="margin-top:4px">
+          <label class="toggle"><span><b>매일 안부 알림</b><small>정한 시각에 ${esc(P)} 폰으로 "오늘 하루 어떠세요?" 알림이 가요. 그날 이미 안부를 보내셨으면 가지 않아요</small></span>
+            <input type="checkbox" name="remindOn" ${f.remindOn !== false ? 'checked' : ''}></label>
+        </div>
+        <label class="field"><span>알림 시각 (한국 시간)</span>
+          <select class="input" name="remindAt">${deadlineOptions(f.remindAt || '09:00')}</select></label>
+        <p class="muted small" id="parent-dev">${f.parentDevices
+          ? `✅ ${esc(P)} 폰 ${f.parentDevices}대에 연결돼 있어요. '오늘 안부 부탁하기'도 링크 대신 알림으로 가요. <button type="button" class="b-del" id="unlink">연결 끊기</button>`
+          : `아직 연결된 ${esc(P)} 폰이 없어요. ${esc(P)} 폰에 안부한장 앱을 설치하고 부모님 링크를 연 뒤, 화면 아래 <b>'매일 알림 받기'</b>를 눌러 주세요.`}</p>
       </section>
       <section class="group">
         <h2>나</h2>
@@ -526,6 +552,10 @@ async function renderSettings(fid) {
     </form>`;
 
   const form = $app.querySelector('#settings');
+  $app.querySelector('#unlink')?.addEventListener('click', async () => {
+    if (!confirm(`${P} 폰 연결을 끊을까요? 다시 연결하려면 ${P} 폰에서 '매일 알림 받기'를 눌러 주세요.`)) return;
+    try { await store.unlinkParent(fid, myId); toast('연결을 끊었어요'); await renderSettings(fid); } catch (err) { toast(err.message); }
+  });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const btn = form.querySelector('button.primary');
@@ -533,7 +563,11 @@ async function renderSettings(fid) {
     try {
       const parentName = form.parentName.value.trim();
       const deadline = form.deadline.value;
-      if (parentName !== f.parentName || deadline !== f.deadline) await store.updateFamily(fid, { parentName, deadline });
+      const remindAt = form.remindAt.value;
+      const remindOn = form.remindOn.checked;
+      if (parentName !== f.parentName || deadline !== f.deadline || remindAt !== f.remindAt || remindOn !== f.remindOn) {
+        await store.updateFamily(fid, { parentName, deadline, remindAt, remindOn });
+      }
       await store.updateMember(fid, myId, {
         name: form.myName.value.trim(), notifyCheckin: form.notifyCheckin.checked, notifyLate: form.notifyLate.checked,
       });
@@ -569,6 +603,39 @@ function renderJoin(f) {
       me.set(f.id, id);
       route();
     } catch (err) { toast(err.message); }
+  };
+}
+
+// ───────── 부모님 폰 알림 (앱에서만) ─────────
+// 이 폰에서 '매일 알림 받기'를 눌렀으면 기억해 두고, 앱을 켤 때마다 조용히 다시 등록(토큰이 바뀌어도 이어지게)
+const PP_KEY = (token) => `haru:pp:${token}`;
+const ppOn = (token) => { try { return localStorage.getItem(PP_KEY(token)) === '1'; } catch { return false; } };
+const timeWord = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h < 12 ? '오전' : '오후'} ${h > 12 ? h - 12 : h}시${m ? ` ${m}분` : ''}`; };
+function parentPushHtml(v, token) {
+  if (ppOn(token)) {
+    return `<p class="tip">🔔 ${v.remindOn ? `매일 ${timeWord(v.remindAt)}에 알려 드려요. 자녀가 안부를 부탁해도 알림이 와요.` : '자녀가 안부를 부탁하면 알림이 와요.'}</p>`;
+  }
+  return `<section class="pp-card">
+    <p class="pp-title">🔔 매일 알림 받기</p>
+    <p class="pp-desc">${v.remindOn ? `매일 ${timeWord(v.remindAt)}에 "오늘 하루 어떠세요?" 알림을 보내 드려요. ` : ''}알림을 누르면 이 화면이 바로 열려요.</p>
+    <button class="btn primary block pp-btn" id="pp-on">알림 받기</button>
+  </section>`;
+}
+function bindParentPush(token) {
+  if (!isApp) return;
+  const reg = () => registerPush(async (t, plat) => {
+    try { await store.registerParentPush(token, t, plat); localStorage.setItem(PP_KEY(token), '1'); } catch { /* 다음에 다시 */ }
+  });
+  if (ppOn(token) && !sessionStorage.getItem(PP_KEY(token))) { sessionStorage.setItem(PP_KEY(token), '1'); reg(); }
+  const b = $app.querySelector('#pp-on');
+  if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    const r = await reg();
+    if (r === 'denied') { b.disabled = false; return toast('알림이 꺼져 있어요. 휴대폰 설정 → 앱 → 안부한장 → 알림을 켜 주세요', 4000); }
+    if (r !== 'requested') { b.disabled = false; return toast('알림을 켜지 못했어요. 잠시 뒤 다시 눌러 주세요'); }
+    // 토큰은 곧 도착한다 — 저장되면 안내가 바뀐다
+    setTimeout(() => { if (ppOn(token)) { toast('알림을 켰어요 🔔'); refreshView({ force: true }); } else b.disabled = false; }, 2500);
   };
 }
 
@@ -614,7 +681,7 @@ async function renderParent(token, justSent = false) {
       ${composerHtml({ id: 'msg', label: '📷 사진·한마디 같이 보내기', placeholder: '예: 오늘 장 보고 왔다', maxlength: 100, big: true })}
       ${sent ? '' : notesHtml}
       ${v.streak ? `<p class="streak">이번 주 <b>${v.streak}일</b> 소식을 보내셨어요 👏</p>` : ''}
-      ${isApp ? '' : '<p class="tip">💡 매일 쉽게 여시려면: 크롬 메뉴 ⋮ → <b>홈 화면에 추가</b></p>'}
+      ${isApp ? parentPushHtml(v, token) : '<p class="tip">💡 매일 쉽게 여시려면: 크롬 메뉴 ⋮ → <b>홈 화면에 추가</b></p>'}
     </div>`;
   loadPhotos();
 
@@ -637,6 +704,7 @@ async function renderParent(token, justSent = false) {
     b.onclick = () => send({ mood: b.dataset.mood }, moodOf(b.dataset.mood).label);
   });
   bindComposer($app.querySelector('#msg'), { folder: v.familyId, onSend: (d) => send(d, josa(sentLabel(d), '을/를')) });
+  bindParentPush(token);
   $app.querySelector('.kids-jump')?.addEventListener('click', () => document.getElementById('kids-talk')?.scrollIntoView({ behavior: 'smooth' }));
   $app.querySelectorAll('[data-pheart]').forEach((b) => {
     b.onclick = async () => {

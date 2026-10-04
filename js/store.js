@@ -60,8 +60,23 @@ export class Store {
     this.#ping(fid);
     return m;
   }
-  async updateFamily(fid, { parentName, deadline }) {
-    await this.#rpc('hb_update_family', { p_family: fid, p_parent_name: parentName || '', p_deadline: deadline || '' });
+  // 가족 방 설정 (바꾸지 않는 값은 비워 둔다). remindAt/remindOn = 부모님 폰 매일 알림
+  async updateFamily(fid, { parentName, deadline, remindAt = null, remindOn = null }) {
+    await this.#rpc('hb_update_family', {
+      p_family: fid, p_parent_name: parentName || '', p_deadline: deadline || '', p_remind_at: remindAt, p_remind_on: remindOn,
+    });
+    this.#ping(fid);
+  }
+  // 부모님 폰 알림: 자녀가 '안부 부탁' → { pushed } (false면 부모님 폰이 아직 연결 안 됨 → 링크 공유)
+  askParent(fid, memberId) {
+    return this.#rpc('hb_ask_parent', { p_family: fid, p_member: memberId });
+  }
+  // 부모님 화면(앱)에서 '매일 알림 받기'
+  registerParentPush(token, pushToken, platform) {
+    return this.#rpc('hb_register_parent_push', { p_token: token, p_push: pushToken, p_platform: platform, p_tz: localTz() });
+  }
+  async unlinkParent(fid, memberId) {
+    await this.#rpc('hb_unlink_parent', { p_family: fid, p_member: memberId });
     this.#ping(fid);
   }
   async parentView(token) {
