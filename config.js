@@ -6,4 +6,6 @@ window.HARU_CONFIG = {
   site: 'https://anbuhanjang.com/',
   // 푸시 알림: android/app/google-services.json(Firebase) 있을 때만 true — 없이 켜면 안드로이드 앱이 죽는다
   push: true,
+  // 스토어 주소 — 정식 출시되면 채운다. 비어 있으면 소개 페이지에 '출시 준비 중'으로 보인다
+  stores: { android: '', ios: '' },
 };

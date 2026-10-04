@@ -1,11 +1,12 @@
 // 안부한장 — 화면 (해시 라우팅)
-//  #/            홈: 가족 방 만들기 · 최근 방
+//  (주소만)      소개 페이지 — 웹에서만, index.html에 정적으로 들어 있다 (앱은 건너뜀)
+//  #/ · #/start  홈: 가족 방 만들기 · 최근 방
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610031906';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610031906';
-import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative } from './native.js?v=202610031906';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610040956';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610040956';
+import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative } from './native.js?v=202610040956';
 
 const $app = document.getElementById('app');
 let store;
@@ -49,6 +50,11 @@ function deadlineOptions(selected = '12:00') {
 async function route() {
   if (unsub) { unsub(); unsub = null; }
   const h = location.hash.slice(1);
+  const landing = !isApp && !h.startsWith('/');
+  const wasLanding = document.documentElement.classList.contains('landing');
+  document.documentElement.classList.toggle('landing', landing);
+  if (landing) return renderLanding();
+  if (wasLanding) scrollTo(0, 0);
   let m;
   try {
     if ((m = h.match(/^\/f\/([\w-]+)\/s$/))) return await renderSettings(m[1]);
@@ -57,6 +63,24 @@ async function route() {
     renderHome();
   } catch (e) {
     $app.innerHTML = `<div class="empty">${esc(e.message)}<br><br><a href="#/">처음으로</a></div>`;
+  }
+}
+
+// ───────── 소개 페이지 (웹) ─────────
+// 본문은 index.html에 정적으로 있다(검색 노출용). 여기선 최근 방 바로가기와 스토어 버튼만 채운다.
+function renderLanding() {
+  const recent = recentFamilies();
+  const $r = document.getElementById('lp-recent');
+  if ($r && recent.length) {
+    $r.innerHTML = `내 가족 방: ${recent.slice(0, 3).map((f) => `<a href="#/f/${esc(f.id)}">${esc(f.parentName)}의 하루</a>`).join(' · ')}`;
+    $r.hidden = false;
+  }
+  const st = window.HARU_CONFIG.stores || {};
+  const $s = document.getElementById('lp-store');
+  if ($s && (st.android || st.ios)) {
+    $s.innerHTML = [st.android && `<a class="btn" href="${esc(st.android)}" rel="noopener">Google Play에서 받기</a>`,
+      st.ios && `<a class="btn" href="${esc(st.ios)}" rel="noopener">App Store에서 받기</a>`].filter(Boolean).join('');
+    $s.classList.add('has-links');
   }
 }
 
