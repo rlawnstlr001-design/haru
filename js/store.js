@@ -79,6 +79,21 @@ export class Store {
     this.#ping(fid);
     return on;
   }
+  // 가족 이야기: 자녀 → 부모님 한마디·사진 (형제도 같이 본다)
+  async addNote(fid, memberId, { message, photo }) {
+    const r = await this.#rpc('hb_add_note', { p_family: fid, p_member: memberId, p_message: message || '', p_photo: photo || '' });
+    this.#ping(fid);
+    return r;
+  }
+  async deleteNote(fid, memberId, noteId) {
+    await this.#rpc('hb_delete_note', { p_family: fid, p_member: memberId, p_note: noteId });
+    this.#ping(fid);
+  }
+  async parentHeart(token, fid, noteId) {
+    const on = await this.#rpc('hb_parent_heart', { p_token: token, p_note: noteId });
+    this.#ping(fid);
+    return on;
+  }
   async registerPush(fid, memberId, token, platform) {
     try {
       await this.#rpc('hb_register_push', { p_family: fid, p_member: memberId, p_token: token, p_platform: platform, p_tz: localTz() });

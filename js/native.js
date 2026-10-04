@@ -73,8 +73,10 @@ export async function registerPush(onToken) {
   } catch { return 'unavailable'; }
 }
 
-// 딥링크(안부한장 링크로 앱 열기)·알림 탭·안드로이드 뒤로가기
-export function initNative({ onOpenHash, onBack }) {
+export const exitApp = () => App?.exitApp();
+
+// 딥링크(안부한장 링크로 앱 열기)·알림 탭·안드로이드 뒤로가기·앱으로 돌아옴·앱을 보는 중에 온 알림
+export function initNative({ onOpenHash, onBack, onResume }) {
   if (!isApp) return;
   document.documentElement.classList.add('is-app', `is-${platform}`);
   StatusBar.setStyle({ style: 'LIGHT' }).catch(() => {});
@@ -86,5 +88,8 @@ export function initNative({ onOpenHash, onBack }) {
     const h = notification?.data?.hash;
     if (h) onOpenHash(h);
   });
+  // 앱을 보는 중에 알림이 오면 화면도 바로 새로 고친다
+  Push?.addListener('pushNotificationReceived', () => onResume?.());
+  App.addListener('resume', () => onResume?.());
   App.addListener('backButton', () => { if (!onBack()) App.exitApp(); });
 }

@@ -4,13 +4,157 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610040956';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610040956';
-import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative } from './native.js?v=202610040956';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610041012';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610041012';
+import { isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp } from './native.js?v=202610041012';
 
 const $app = document.getElementById('app');
 let store;
 let unsub = null;
+
+// ───────── 새 소식 반영 ─────────
+// 가족·부모님 화면은 view()로 다시 그린다. 실시간 신호·앱으로 돌아옴·알림 도착·1분마다·당겨서 새로고침이 부른다.
+// 글을 쓰는 중이면(입력칸에 커서) 다 쓰고 나갈 때까지 미룬다. 쓰던 글·고른 사진은 drafts에 남아 다시 그려도 그대로다.
+let view = null;
+let lastRender = 0;
+let pendingRefresh = false;
+let trail = null;
+let refreshing = null;
+const drafts = new Map();
+const typing = () => { const a = document.activeElement; return !!a && $app.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName); };
+function refreshView({ force = false } = {}) {
+  if (!view) return Promise.resolve();
+  if (!force && typing()) { pendingRefresh = true; return Promise.resolve(); }
+  const wait = 1500 - (Date.now() - lastRender);
+  if (!force && wait > 0) { clearTimeout(trail); trail = setTimeout(() => refreshView(), wait); return Promise.resolve(); }
+  if (refreshing) return refreshing;
+  pendingRefresh = false;
+  const y = scrollY;
+  refreshing = view().then(() => scrollTo(0, y)).catch(() => {}).finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+// 당겨서 새로고침 (화면 맨 위에서 아래로 끌기)
+function initPullToRefresh() {
+  const ind = document.createElement('div');
+  ind.className = 'ptr';
+  ind.setAttribute('aria-hidden', 'true');
+  ind.textContent = '↻';
+  document.body.append(ind);
+  let y0 = null;
+  addEventListener('touchstart', (e) => {
+    y0 = (view && scrollY <= 0 && e.touches.length === 1 && !document.querySelector('.photo-viewer')) ? e.touches[0].clientY : null;
+  }, { passive: true });
+  addEventListener('touchmove', (e) => {
+    if (y0 == null) return;
+    const d = Math.max(0, Math.min((e.touches[0].clientY - y0) * 0.5, 90));
+    ind.style.transform = `translate(-50%, ${d}px) rotate(${d * 4}deg)`;
+    ind.classList.toggle('ready', d >= 60);
+  }, { passive: true });
+  addEventListener('touchend', async () => {
+    if (y0 == null) return;
+    y0 = null;
+    if (ind.classList.contains('ready')) {
+      ind.classList.add('spin');
+      await refreshView({ force: true });
+      ind.classList.remove('spin');
+      toast('최신 소식이에요', 1400);
+    }
+    ind.classList.remove('ready');
+    ind.style.transform = '';
+  });
+}
+
+// 안드로이드 뒤로가기: 앱 안에서 이동한 만큼만 뒤로, 첫 화면에서는 "한 번 더 누르면 종료"
+let depth = 0;
+let replacing = false;
+let backAt = 0;
+const replaceHash = (h) => { replacing = true; location.replace(h); };
+function onHashChange() {
+  const d = history.state?.d;
+  if (replacing) { replacing = false; history.replaceState({ d: depth }, ''); }
+  else if (typeof d === 'number') depth = d;
+  else { depth += 1; history.replaceState({ d: depth }, ''); }
+  route();
+}
+function onBack() {
+  const v = document.querySelector('.photo-viewer');
+  if (v) { v.remove(); return true; }
+  if (depth > 0) { history.back(); return true; }
+  if (Date.now() - backAt < 2000) { exitApp(); return true; }
+  backAt = Date.now();
+  toast('한 번 더 누르면 종료돼요', 2000);
+  return true;
+}
+
+// 사진과 한마디를 한 번에 보내는 입력칸 (부모님·자녀 공용). big = 부모님용 큰 버튼
+function composerHtml({ id, label, placeholder, maxlength, big = false }) {
+  const cls = big ? 'big-btn' : 'cmp-add';
+  const photoBtns = isApp
+    ? `<button type="button" class="${cls}" data-src="camera">📷 사진 찍기</button><button type="button" class="${cls}" data-src="gallery">🖼 앨범에서</button>`
+    : `<button type="button" class="${cls}" data-src="any">📷 사진 ${big ? '고르기' : '넣기'}</button>`;
+  return `<form class="composer ${big ? 'big' : ''}" id="${id}">
+    ${label ? `<label class="cmp-label" for="${id}-m">${label}</label>` : ''}
+    <div class="cmp-preview" hidden><img alt="보낼 사진"><button type="button" class="cmp-x" aria-label="사진 빼기">✕</button></div>
+    <textarea id="${id}-m" name="m" maxlength="${maxlength}" rows="2" placeholder="${esc(placeholder)}"></textarea>
+    <div class="cmp-row ${isApp ? 'two' : ''}">${photoBtns}</div>
+    <p class="cmp-hint" hidden>사진을 넣었어요. 한마디를 적거나 바로 <b>보내기</b>를 눌러 주세요</p>
+    <button class="btn primary block cmp-send">보내기</button>
+  </form>`;
+}
+// onSend({message, photo}) → 성공하면 true
+function bindComposer(form, { folder, onSend }) {
+  const key = `${location.hash}|${form.id}`;
+  let d = drafts.get(key) || { text: '', blob: null };
+  drafts.set(key, d);
+  const prev = form.querySelector('.cmp-preview');
+  const hint = form.querySelector('.cmp-hint');
+  let url = null;
+  const show = () => {
+    if (url) URL.revokeObjectURL(url);
+    url = d.blob ? URL.createObjectURL(d.blob) : null;
+    prev.hidden = !d.blob;
+    hint.hidden = !d.blob;
+    if (url) prev.querySelector('img').src = url;
+    form.classList.toggle('has-photo', !!d.blob);
+  };
+  form.m.value = d.text;
+  show();
+  form.m.addEventListener('input', () => { d.text = form.m.value; });
+  form.querySelectorAll('[data-src]').forEach((b) => {
+    b.onclick = async () => {
+      const raw = b.dataset.src === 'any' ? await pickPhoto() : await pickPhotoNative(b.dataset.src);
+      if (!raw) return;
+      try { d.blob = await compressImage(raw); } catch { return toast('사진을 열지 못했어요'); }
+      show();
+      form.querySelector('.cmp-send').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+  });
+  prev.querySelector('.cmp-x').onclick = () => { d.blob = null; show(); };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const message = form.m.value.trim();
+    if (!message && !d.blob) return toast('한마디를 적거나 사진을 넣어 주세요');
+    const btn = form.querySelector('.cmp-send');
+    btn.disabled = true;
+    let photo = '';
+    if (d.blob) {
+      try { toast('사진 올리는 중…', 8000); photo = await store.uploadPhoto(folder, d.blob); }
+      catch { btn.disabled = false; return toast('사진을 보내지 못했어요. 다시 해 주세요'); }
+    }
+    const saved = d;
+    drafts.delete(key); // 보내고 나서 다시 그리는 화면은 빈 칸으로
+    if (!(await onSend({ message, photo }))) { drafts.set(key, saved); btn.disabled = false; }
+  };
+}
+const sentLabel = ({ message, photo }) => (photo && message ? '사진과 한마디' : photo ? '사진' : '한마디');
+// "오늘" / "어제" / "10/2"
+function dayWord(day, today) {
+  if (day === today) return '오늘';
+  const d = new Date(`${today}T12:00:00+09:00`);
+  d.setDate(d.getDate() - 1);
+  return day === d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) ? '어제' : day.slice(5).replace('-', '/');
+}
 
 const MOODS = [
   { id: 'good', emoji: '😊', label: '좋아요' },
@@ -49,6 +193,7 @@ function deadlineOptions(selected = '12:00') {
 // ───────── 라우터 ─────────
 async function route() {
   if (unsub) { unsub(); unsub = null; }
+  view = null;
   const h = location.hash.slice(1);
   const landing = !isApp && !h.startsWith('/');
   const wasLanding = document.documentElement.classList.contains('landing');
@@ -133,12 +278,15 @@ function renderHome() {
 // ───────── 자녀 화면 ─────────
 async function renderFamily(fid) {
   const f = await store.getFamily(fid);
+  if (!location.hash.startsWith(`#/f/${fid}`) || location.hash.endsWith('/s')) return; // 불러오는 사이 다른 화면으로 갔다
   const myId = me.get(fid);
   const mine = f.members.find((m) => m.id === myId);
   if (!mine) return renderJoin(f);
 
   if (!sessionStorage.getItem(`haru:opened:${fid}`)) { sessionStorage.setItem(`haru:opened:${fid}`, '1'); store.log(fid, 'family_opened'); }
-  unsub = store.subscribe(fid, () => renderFamily(fid).catch(() => {}));
+  if (!unsub) unsub = store.subscribe(fid, () => refreshView());
+  view = () => renderFamily(fid);
+  lastRender = Date.now();
 
   const P = f.parentName;
   const today = f.checkins.filter((c) => c.day === f.today);
@@ -153,6 +301,14 @@ async function renderFamily(fid) {
     return { iso, label: '일월화수목금토'[d.getDay()], ok: f.checkins.some((c) => c.day === iso), isToday: iso === f.today };
   });
   const past = f.checkins.filter((c) => c.day !== f.today);
+  // 가족 이야기: 최근 3일 (오늘·어제·그제)
+  const talk = (f.notes || []).filter((n) => Date.parse(`${f.today}T00:00:00+09:00`) - Date.parse(`${n.day}T00:00:00+09:00`) <= 2 * 86400000);
+  let lastDay = '';
+  const talkHtml = talk.map((n) => {
+    const head = n.day !== lastDay ? `<p class="talk-day">${dayWord(n.day, f.today)}</p>` : '';
+    lastDay = n.day;
+    return head + noteBubble(n, f, myId);
+  }).join('');
 
   $app.innerHTML = `
     <header class="mast">
@@ -183,6 +339,12 @@ async function renderFamily(fid) {
             </div>
           </article>
           <button class="btn primary block" id="ask">💌 오늘 안부 부탁하기</button>`}
+    </section>
+
+    <section class="block talk">
+      <h2>가족 이야기<span>${esc(P)}도 같이 봐요</span></h2>
+      ${talkHtml || `<p class="muted small talk-empty">${esc(P)}께 오늘 이야기를 남겨 보세요. 사진도 같이 보낼 수 있어요.</p>`}
+      ${composerHtml({ id: 'note', placeholder: `${P}께 한마디 (형제들도 같이 봐요)`, maxlength: 200 })}
     </section>
 
     <section class="block">
@@ -222,6 +384,24 @@ async function renderFamily(fid) {
   });
   $app.querySelector('a[aria-label="설정"]').addEventListener('click', () => sessionStorage.setItem('haru:settingsFrom', fid));
   bindHearts(f, myId);
+  bindComposer($app.querySelector('#note'), {
+    folder: fid,
+    onSend: async (d) => {
+      try {
+        await store.addNote(fid, myId, d);
+        haptic(120);
+        toast(`${josa(sentLabel(d), '을/를')} 남겼어요`);
+        await renderFamily(fid);
+        return true;
+      } catch (e) { toast(e.message); return false; }
+    },
+  });
+  $app.querySelectorAll('[data-del]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('이 이야기를 지울까요?')) return;
+      try { await store.deleteNote(fid, myId, b.dataset.del); await renderFamily(fid); } catch (e) { toast(e.message); }
+    };
+  });
   loadPhotos();
   if (isApp && !sessionStorage.getItem(`haru:push:${fid}`)) {
     sessionStorage.setItem(`haru:push:${fid}`, '1');
@@ -249,6 +429,22 @@ function todayCard(c, f, myId) {
     </div>
     ${who.length ? `<p class="hearted">${esc(joinNames(who))} 하트</p>` : ''}
   </article>`;
+}
+
+// 가족 이야기 한 줄: 내 것은 오른쪽, 다른 형제는 왼쪽(이름·색)
+function noteBubble(n, f, myId) {
+  const i = f.members.findIndex((m) => m.id === n.memberId);
+  const who = f.members[i];
+  const mine = n.memberId === myId;
+  return `<div class="bubble ${mine ? 'mine' : ''}">
+    ${mine ? '' : `<i class="b-av" style="--c:${AVATAR_COLORS[Math.max(i, 0) % AVATAR_COLORS.length]}">${esc([...(who?.name || '?')][0])}</i>`}
+    <div class="b-body">
+      ${mine ? '' : `<span class="b-name">${esc(who?.name || '가족')}</span>`}
+      ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" alt="${esc(josa(who?.name || '가족', '이/가'))} 보낸 사진">` : ''}
+      ${n.message ? `<p>${esc(n.message)}</p>` : ''}
+      <span class="b-meta">${timeLabel(n.at)}${n.parentHeart ? ` · <b class="b-heart">💗 ${esc(f.parentName)}</b>` : ''}${mine ? ` · <button type="button" class="b-del" data-del="${esc(n.id)}">지우기</button>` : ''}</span>
+    </div>
+  </div>`;
 }
 
 // 지난 소식: 작은 폴라로이드
@@ -293,7 +489,7 @@ async function renderSettings(fid) {
   const f = await store.getFamily(fid);
   const myId = me.get(fid);
   const mine = f.members.find((m) => m.id === myId);
-  if (!mine) { location.replace(`#/f/${fid}`); return; }
+  if (!mine) { replaceHash(`#/f/${fid}`); return; }
   const tz = localTz();
   const away = tz && tz !== 'Asia/Seoul';
   $app.innerHTML = `
@@ -344,7 +540,7 @@ async function renderSettings(fid) {
       toast('저장했어요');
       // 가족 화면의 ⚙로 들어왔으면 뒤로(기록이 쌓이지 않게), 링크로 바로 왔으면 가족 화면으로
       if (sessionStorage.getItem('haru:settingsFrom') === fid) history.back();
-      else location.replace(`#/f/${fid}`);
+      else replaceHash(`#/f/${fid}`);
     } catch (err) { toast(err.message); btn.disabled = false; }
   };
 }
@@ -377,17 +573,32 @@ function renderJoin(f) {
 }
 
 // ───────── 부모님 화면 ─────────
+// 위에서부터: 오늘 보낸 것·받은 하트 → 자녀들이 보낸 이야기(하트로 답) → 기분 버튼(한 번에 보냄) → 사진·한마디 같이 보내기
 async function renderParent(token, justSent = false) {
   const v = await store.parentView(token);
+  if (location.hash !== `#/p/${token}`) return;
   if (!unsub) {
-    unsub = store.subscribe(v.familyId, () => renderParent(token).catch(() => {}));
+    unsub = store.subscribe(v.familyId, () => refreshView());
     if (!sessionStorage.getItem(`haru:popened:${token}`)) { sessionStorage.setItem(`haru:popened:${token}`, '1'); store.log(v.familyId, 'parent_opened'); }
   }
+  view = () => renderParent(token);
+  lastRender = Date.now();
   const kids = joinNames(v.children);
   const sent = v.todayCheckins.length > 0;
   const hearts = [...new Set(v.todayCheckins.flatMap((c) => c.hearts))];
-
   const photos = v.todayCheckins.filter((c) => c.photo);
+  const notes = [...(v.notes || [])].reverse().slice(0, 8); // 최근 것부터
+  // 오늘 아직 안 보내셨으면 기분 버튼이 먼저, 이야기는 아래로 (위에 '와 있어요' 안내)
+  const notesHtml = notes.length ? `<section class="kids-talk" id="kids-talk">
+          <h2 class="p-h">💌 자녀들이 보낸 이야기</h2>
+          ${notes.map((n) => `<article class="kid-note">
+            <p class="kn-who"><b>${esc(n.name)}</b> <span>${dayWord(n.day, v.today)} ${timeLabel(n.at)}</span></p>
+            ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" alt="${esc(josa(n.name, '이/가'))} 보낸 사진">` : ''}
+            ${n.message ? `<p class="kn-msg">${esc(n.message)}</p>` : ''}
+            <button class="heart kn-heart ${n.heart ? 'on' : ''}" data-pheart="${esc(n.id)}" aria-pressed="${n.heart}">${n.heart ? '❤️ 하트 보냈어요' : '🤍 하트 보내기'}</button>
+          </article>`).join('')}
+        </section>` : '';
+
   $app.innerHTML = `
     <div class="parent">
       <p class="date">${esc(dateLabel(v.today))}</p>
@@ -397,16 +608,11 @@ async function renderParent(token, justSent = false) {
           <p class="sent-title">💛 ${esc(kids)}에게 전했어요</p>
           ${hearts.length ? `<p class="hearts">❤️ ${esc(joinNames([...hearts.slice(0, -1), josa(hearts.at(-1), '이/가')]))} 하트를 보냈어요</p>` : '<p class="muted">곧 하트가 올 거예요</p>'}
         </section>` : ''}
-      <p class="ask">${sent ? '더 보내고 싶으시면 눌러 주세요' : '아래에서 하나만 눌러 주세요'}</p>
+      ${sent ? notesHtml : (notes.length ? `<button type="button" class="kids-jump">💌 자녀들 이야기 ${notes.length}개가 와 있어요 ↓</button>` : '')}
+      <p class="ask">${sent ? '더 보내고 싶으시면 눌러 주세요' : '기분 하나만 눌러도 돼요'}</p>
       <div class="mood-tiles">${MOODS.map((m) => `<button class="mood-tile ${m.id}" data-mood="${m.id}"><span class="e">${m.emoji}</span><span>${m.label}</span></button>`).join('')}</div>
-      <div class="photo-btns ${isApp ? 'two' : ''}">${isApp
-        ? '<button class="big-btn" data-src="camera">📷 사진 찍기</button><button class="big-btn" data-src="gallery">🖼 앨범에서</button>'
-        : '<button class="big-btn" data-src="any">📷 사진 한 장 보내기</button>'}</div>
-      <form id="msg" class="note-form">
-        <label for="msg-m">✉️ 한마디</label>
-        <textarea id="msg-m" name="m" maxlength="100" rows="2" placeholder="예: 오늘 장 보고 왔다"></textarea>
-        <button class="btn primary">보내기</button>
-      </form>
+      ${composerHtml({ id: 'msg', label: '📷 사진·한마디 같이 보내기', placeholder: '예: 오늘 장 보고 왔다', maxlength: 100, big: true })}
+      ${sent ? '' : notesHtml}
       ${v.streak ? `<p class="streak">이번 주 <b>${v.streak}일</b> 소식을 보내셨어요 👏</p>` : ''}
       ${isApp ? '' : '<p class="tip">💡 매일 쉽게 여시려면: 크롬 메뉴 ⋮ → <b>홈 화면에 추가</b></p>'}
     </div>`;
@@ -419,46 +625,43 @@ async function renderParent(token, justSent = false) {
       haptic(250);
       toast(`${label} 보냈어요`);
       await renderParent(token, true);
+      scrollTo({ top: 0, behavior: 'smooth' });
+      return true;
     } catch (e) {
       toast(e.message);
       $app.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      return false;
     }
   };
   $app.querySelectorAll('[data-mood]').forEach((b) => {
     b.onclick = () => send({ mood: b.dataset.mood }, moodOf(b.dataset.mood).label);
   });
-  $app.querySelectorAll('[data-src]').forEach((b) => { b.onclick = () => sendPhoto(b.dataset.src); });
-  async function sendPhoto(src) {
-    const raw = src === 'any' ? await pickPhoto() : await pickPhotoNative(src);
-    if (!raw) return;
-    let path;
-    try {
-      toast('사진 올리는 중…', 8000);
-      path = await store.uploadPhoto(v.familyId, await compressImage(raw));
-    } catch { return toast('사진을 보내지 못했어요. 다시 해 주세요'); }
-    send({ photo: path }, '사진');
-  }
-  $app.querySelector('#msg').onsubmit = (e) => {
-    e.preventDefault();
-    const m = e.target.m.value.trim();
-    if (!m) return toast('한마디를 적어 주세요');
-    send({ message: m }, '한마디');
-  };
+  bindComposer($app.querySelector('#msg'), { folder: v.familyId, onSend: (d) => send(d, josa(sentLabel(d), '을/를')) });
+  $app.querySelector('.kids-jump')?.addEventListener('click', () => document.getElementById('kids-talk')?.scrollIntoView({ behavior: 'smooth' }));
+  $app.querySelectorAll('[data-pheart]').forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try { if (await store.parentHeart(token, v.familyId, b.dataset.pheart)) haptic(120); await renderParent(token); }
+      catch (e) { toast(e.message); b.disabled = false; }
+    };
+  });
 }
 
 // ───────── 시작 ─────────
 (async () => {
   store = await createStore(window.HARU_CONFIG);
   window.__haru = { store };
-  addEventListener('hashchange', route);
+  history.replaceState({ d: 0 }, '');
+  addEventListener('hashchange', onHashChange);
   initNative({
-    onOpenHash: (h) => { if (location.hash !== h) location.hash = h; else route(); },
-    onBack: () => {
-      const v = document.querySelector('.photo-viewer');
-      if (v) { v.remove(); return true; }
-      if (location.hash && location.hash !== '#/') { history.back(); return true; }
-      return false;
-    },
+    onOpenHash: (h) => { if (location.hash !== h) location.hash = h; else refreshView({ force: true }); },
+    onBack,
+    onResume: () => refreshView(),
   });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshView(); });
+  addEventListener('online', () => refreshView());
+  $app.addEventListener('focusout', () => { if (pendingRefresh) setTimeout(() => refreshView(), 400); });
+  setInterval(() => { if (document.visibilityState === 'visible') refreshView(); }, 60000);
+  initPullToRefresh();
   route();
 })();
