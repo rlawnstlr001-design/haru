@@ -305,3 +305,6 @@ html.landing #app { display: none; }
 .pp-title { font-family: var(--serif); font-size: 21px; font-weight: 700; margin: 0; }
 .pp-desc { margin: 6px 0 12px; font-size: 17px; word-break: keep-all; }
 .pp-btn { min-height: 60px; font-size: 20px; }
+.pp-call { margin-top: 12px; }
+.pp-fs { margin: 0 0 10px; padding: 14px 16px; border-radius: 16px; background: var(--amber-soft); font-size: 16px; word-break: keep-all; }
+.pp-fs .btn { margin-top: 10px; }

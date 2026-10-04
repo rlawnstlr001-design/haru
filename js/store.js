@@ -61,9 +61,10 @@ export class Store {
     return m;
   }
   // 가족 방 설정 (바꾸지 않는 값은 비워 둔다). remindAt/remindOn = 부모님 폰 매일 알림
-  async updateFamily(fid, { parentName, deadline, remindAt = null, remindOn = null }) {
+  async updateFamily(fid, { parentName, deadline, remindAt = null, remindOn = null, callOn = null }) {
     await this.#rpc('hb_update_family', {
       p_family: fid, p_parent_name: parentName || '', p_deadline: deadline || '', p_remind_at: remindAt, p_remind_on: remindOn,
+      p_call_on: callOn,
     });
     this.#ping(fid);
   }
