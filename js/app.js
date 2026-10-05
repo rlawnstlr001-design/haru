@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610041132';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610041132';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610051519';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610051519';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610041132';
+} from './native.js?v=202610051519';
 
 const $app = document.getElementById('app');
 let store;
@@ -615,6 +615,25 @@ function renderJoin(f) {
   };
 }
 
+// ───────── 웹(카톡 안 브라우저 등)으로 열린 부모님 화면 → 앱으로 열기 ─────────
+// 카톡은 링크를 앱으로 넘기지 않고 자기 브라우저로 연다. 안드로이드는 intent:// 로 안부한장 앱을 직접 연다
+// (앱이 없으면 소개 페이지로). 해시가 빠지는 브라우저를 위해 ?h= 에도 같은 경로를 싣는다.
+const isAndroidWeb = () => !isApp && /Android/i.test(navigator.userAgent);
+function appIntentUrl(token) {
+  const path = `/p/${token}`;
+  const fallback = encodeURIComponent('https://anbuhanjang.com/');
+  return `intent://anbuhanjang.com/?h=${encodeURIComponent(path)}#${path}#Intent;scheme=https;package=com.anbuhanjang.app;S.browser_fallback_url=${fallback};end`;
+}
+function openInAppHtml(token) {
+  if (!isAndroidWeb()) return '<p class="tip">💡 매일 쉽게 여시려면: 브라우저 메뉴 → <b>홈 화면에 추가</b></p>';
+  return `<section class="pp-card">
+    <p class="pp-title">📱 앱에서 열기</p>
+    <p class="pp-desc">매일 알림과 전화 알림은 안부한장 앱에서 받아요. 앱을 설치했다면 아래를 눌러 주세요.</p>
+    <a class="btn primary block pp-btn" href="${esc(appIntentUrl(token))}">안부한장 앱으로 열기</a>
+    <p class="pp-note">앱이 없으면 안부한장 소개 화면으로 가요</p>
+  </section>`;
+}
+
 // ───────── 부모님 폰 알림 (앱에서만) ─────────
 // 이 폰에서 '매일 알림 받기'를 눌렀으면 기억해 두고, 앱을 켤 때마다 조용히 다시 등록(토큰이 바뀌어도 이어지게)
 const PP_KEY = (token) => `haru:pp:${token}`;
@@ -705,7 +724,7 @@ async function renderParent(token, justSent = false) {
       ${composerHtml({ id: 'msg', label: '📷 사진·한마디 같이 보내기', placeholder: '예: 오늘 장 보고 왔다', maxlength: 100, big: true })}
       ${sent ? '' : notesHtml}
       ${v.streak ? `<p class="streak">이번 주 <b>${v.streak}일</b> 소식을 보내셨어요 👏</p>` : ''}
-      ${isApp ? parentPushHtml(v, token) : '<p class="tip">💡 매일 쉽게 여시려면: 크롬 메뉴 ⋮ → <b>홈 화면에 추가</b></p>'}
+      ${isApp ? parentPushHtml(v, token) : openInAppHtml(token)}
     </div>`;
   loadPhotos();
 

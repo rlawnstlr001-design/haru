@@ -308,3 +308,5 @@ html.landing #app { display: none; }
 .pp-call { margin-top: 12px; }
 .pp-fs { margin: 0 0 10px; padding: 14px 16px; border-radius: 16px; background: var(--amber-soft); font-size: 16px; word-break: keep-all; }
 .pp-fs .btn { margin-top: 10px; }
+a.pp-btn { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.pp-note { margin: 8px 0 0; font-size: 14px; color: var(--muted); text-align: center; }

@@ -92,7 +92,14 @@ export function initNative({ onOpenHash, onBack, onResume }) {
   document.documentElement.classList.add('is-app', `is-${platform}`);
   StatusBar.setStyle({ style: 'LIGHT' }).catch(() => {});
   if (platform === 'android') StatusBar.setBackgroundColor({ color: '#F3EEE6' }).catch(() => {});
-  const open = (url) => { try { onOpenHash(new URL(url).hash || '#/'); } catch { /* 무시 */ } };
+  // 링크의 #/… 로 이동. 웹의 '앱으로 열기'(intent://)는 해시가 빠질 수 있어 ?h=/p/… 로도 넘긴다
+  const open = (url) => {
+    try {
+      const u = new URL(url);
+      const h = u.hash || (u.searchParams.get('h') ? `#${u.searchParams.get('h')}` : '#/');
+      onOpenHash(h);
+    } catch { /* 무시 */ }
+  };
   App.addListener('appUrlOpen', ({ url }) => open(url));
   App.getLaunchUrl().then((r) => r?.url && open(r.url)).catch(() => {});
   Push?.addListener('pushNotificationActionPerformed', ({ notification }) => {
