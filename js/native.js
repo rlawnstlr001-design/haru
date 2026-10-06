@@ -12,11 +12,11 @@ const App = plug('App');
 const StatusBar = plug('StatusBar');
 const Camera = plug('Camera');
 const Push = plug('PushNotifications');
-// 안드로이드 전용 네이티브 플러그인(MainActivity에 등록): 전화처럼 울리는 안부 알림
+// 안드로이드 전용 네이티브 플러그인(MainActivity에 등록): 안부 알람
 const Call = isApp && platform === 'android' ? plug('AnbuCall') : null;
 
 export const callSupported = !!Call;
-// { fullScreen } — 안드로이드 14+는 잠금 화면에 전화처럼 띄우려면 사용자가 '전체 화면 알림'을 허용해야 한다
+// { fullScreen } — 안드로이드 14+는 잠금 화면에 알람처럼 크게 띄우려면 사용자가 '전체 화면 알림'을 허용해야 한다
 export async function callStatus() {
   if (!Call) return null;
   try { return await Call.status(); } catch { return null; }

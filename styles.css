@@ -312,3 +312,12 @@ a.pp-btn { display: flex; align-items: center; justify-content: center; text-dec
 .pp-note { margin: 8px 0 0; font-size: 14px; color: var(--muted); text-align: center; }
 /* 띄어쓰기 없는 긴 호칭(최대 20자)도 좁은 화면에서 줄바꿈 */
 .day-head h1, .cover h1, .page-title, .greet, .sent-title, .lp-hero h1 { overflow-wrap: anywhere; }
+/* 부모님 화면: 안부 알람 받기 스위치 */
+.pp-call { margin-top: 14px; background: var(--paper); border-radius: 20px; padding: 4px 18px 16px; box-shadow: var(--shadow); }
+.pp-toggle { border-top: 0; font-size: 19px; } .pp-toggle small { font-size: 16px; }
+/* 기분 버튼 3초 취소 막대 (부모님용 큰 글씨) */
+.undo-bar { position: fixed; left: 12px; right: 12px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 70; display: flex; align-items: center; gap: 12px;
+  background: var(--navy); color: #fff; border-radius: 20px; padding: 16px 16px 20px 20px; font-size: 20px; font-weight: 800; box-shadow: var(--shadow); overflow: hidden; }
+.undo-bar span { flex: 1; } .undo-bar button { border: 0; border-radius: 99px; background: #fff; color: var(--navy); font-size: 20px; font-weight: 900; padding: 12px 22px; cursor: pointer; }
+.undo-bar i { position: absolute; left: 0; bottom: 0; height: 5px; width: 100%; background: var(--rose); transform-origin: left; animation: undo-shrink linear forwards; }
+@keyframes undo-shrink { to { transform: scaleX(0); } }

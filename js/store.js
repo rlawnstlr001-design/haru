@@ -76,6 +76,10 @@ export class Store {
   registerParentPush(token, pushToken, platform) {
     return this.#rpc('hb_register_parent_push', { p_token: token, p_push: pushToken, p_platform: platform, p_tz: localTz() });
   }
+  // 부모님 화면 '안부 알람 받기' — 이 폰(알림 토큰)에만 켜고 끈다
+  parentCallOpt(token, pushToken, on) {
+    return this.#rpc('hb_parent_call_opt', { p_token: token, p_push: pushToken, p_on: on });
+  }
   async unlinkParent(fid, memberId) {
     await this.#rpc('hb_unlink_parent', { p_family: fid, p_member: memberId });
     this.#ping(fid);

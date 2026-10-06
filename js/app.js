@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610060948';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610060948';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610061646';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610061646';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610060948';
+} from './native.js?v=202610061646';
 
 const $app = document.getElementById('app');
 let store;
@@ -302,6 +302,9 @@ async function renderFamily(fid) {
   // 방을 만든 날은 마감 경고를 하지 않는다 (부모님이 링크를 받기도 전이라)
   const createdToday = new Date(f.createdAt).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === f.today;
   const late = !today.length && !createdToday && kstNowMinutes() > toMinutes(f.deadline);
+  // 최근 7일 소식이 없으면(서버도 '늦음' 알림을 멈춘다) 걱정 대신 링크를 다시 보내 보자는 안내
+  const weekAgo = new Date(`${f.today}T12:00:00Z`); weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
+  const quiet = f.checkins.length > 0 && !f.checkins.some((c) => c.day >= weekAgo.toISOString().slice(0, 10));
   const fresh = !f.checkins.length; // 부모님이 처음 안부를 보내실 때까지 '처음 할 일' 안내를 남긴다
   // 날짜 계산은 정오(UTC) 기준 — 폰이 미국·베트남 시간이어도 요일이 밀리지 않게
   const days = Array.from({ length: 7 }, (_, i) => {
@@ -341,6 +344,14 @@ async function renderFamily(fid) {
 
     <section class="today-wrap">
       ${today.length ? today.map((c) => todayCard(c, f, myId)).join('')
+        : quiet ? `<article class="polaroid">
+            <div class="face empty"><span class="e">💌</span></div>
+            <div class="caption">
+              <p class="note">최근 7일 동안 소식이 없었어요</p>
+              <p class="muted small">링크를 잃어버리셨을 수도 있어요. ${esc(P)}께 링크를 다시 보내 드려 볼까요? 그동안 '아직 소식 없음' 알림은 쉬어요</p>
+            </div>
+          </article>
+          <button class="btn block" id="send-parent3">💌 ${esc(P)}께 링크 다시 보내기</button>`
         : `<article class="polaroid ${late ? 'late' : ''}">
             <div class="face empty"><span class="e">${late ? '📞' : '🌤'}</span></div>
             <div class="caption">
@@ -386,6 +397,7 @@ async function renderFamily(fid) {
   };
   $app.querySelector('#send-parent')?.addEventListener('click', sendParent);
   $app.querySelector('#send-parent2')?.addEventListener('click', sendParent);
+  $app.querySelector('#send-parent3')?.addEventListener('click', sendParent);
   $app.querySelector('#invite')?.addEventListener('click', invite);
   $app.querySelector('#invite2')?.addEventListener('click', invite);
   // 부모님 폰이 연결돼 있으면 알림으로 바로, 아니면(또는 실패하면) 지금처럼 링크 공유
@@ -548,7 +560,8 @@ async function renderSettings(fid) {
         <label class="field"><span>알림 시각 (한국 시간)</span>
           <select class="input" name="remindAt">${deadlineOptions(f.remindAt || '09:00')}</select></label>
         <div style="margin-top:8px">
-          <label class="toggle"><span><b>📞 안 보내시면 전화처럼 울리기</b><small>매일 알림 30분 뒤에도 안부가 없으면 ${esc(P)} 폰이 전화 오듯 울려요. 30분 뒤 한 번 더, 하루 최대 2번. 밤 10시~아침 8시엔 울리지 않아요 (안드로이드)</small></span>
+          <label class="toggle"><span><b>⏰ 안 보내시면 안부 알람</b><small>매일 알림 30분 뒤에도 안부가 없으면 ${esc(P)} 폰에서 알람이 울려요. 30분 뒤 한 번 더, 하루 최대 2번, 밤 10시~아침 8시엔 쉬어요 (안드로이드).
+            ${f.parentCallDevices ? `✅ ${esc(P)} 폰에서 알람을 켜 두셨어요` : `${esc(P)} 폰 화면에서 <b>'안부 알람 받기'</b>를 직접 켜셔야 울려요`}</small></span>
             <input type="checkbox" name="callOn" ${f.callOn !== false ? 'checked' : ''}></label>
         </div>
         <p class="muted small" id="parent-dev">${f.parentDevices
@@ -642,7 +655,7 @@ function openInAppHtml(token) {
   if (!isAndroidWeb()) return '<p class="tip">💡 매일 쉽게 여시려면: 브라우저 메뉴 → <b>홈 화면에 추가</b></p>';
   return `<section class="pp-card">
     <p class="pp-title">📱 앱에서 열기</p>
-    <p class="pp-desc">매일 알림과 전화 알림은 안부한장 앱에서 받아요. 앱을 설치했다면 아래를 눌러 주세요.</p>
+    <p class="pp-desc">매일 알림과 안부 알람은 안부한장 앱에서 받아요. 앱을 설치했다면 아래를 눌러 주세요.</p>
     <a class="btn primary block pp-btn" href="${esc(appIntentUrl(token))}">안부한장 앱으로 열기</a>
     <p class="pp-note">앱이 없으면 안부한장 소개 화면으로 가요</p>
   </section>`;
@@ -651,18 +664,25 @@ function openInAppHtml(token) {
 // ───────── 부모님 폰 알림 (앱에서만) ─────────
 // 이 폰에서 '매일 알림 받기'를 눌렀으면 기억해 두고, 앱을 켤 때마다 조용히 다시 등록(토큰이 바뀌어도 이어지게)
 const PP_KEY = (token) => `haru:pp:${token}`;
+const PTOK_KEY = (token) => `haru:pptok:${token}`; // 이 폰의 알림 토큰 (안부 알람 켜고 끌 때 서버에 알려 준다)
+const PCALL_KEY = (token) => `haru:pcall:${token}`;
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 저장 불가 */ } };
+const pcallOn = (token) => lsGet(PCALL_KEY(token)) === '1';
 const ppOn = (token) => { try { return localStorage.getItem(PP_KEY(token)) === '1'; } catch { return false; } };
 const timeWord = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h < 12 ? '오전' : '오후'} ${h > 12 ? h - 12 : h}시${m ? ` ${m}분` : ''}`; };
 function parentPushHtml(v, token) {
   if (ppOn(token)) {
     const call = callSupported && v.remindOn && v.callOn !== false;
-    return `<p class="tip">🔔 ${v.remindOn ? `매일 ${timeWord(v.remindAt)}에 알려 드려요. 자녀가 안부를 부탁해도 알림이 와요.` : '자녀가 안부를 부탁하면 알림이 와요.'}
-      ${call ? '<br>📞 알림 30분 뒤에도 안부가 없으면 전화처럼 울려요.' : ''}</p>
-    ${call ? `<div class="pp-call" id="pp-call">
-      <p class="pp-fs" id="pp-fs" hidden>잠금 화면에서도 전화처럼 크게 뜨게 하려면 한 번만 허용해 주세요.
+    const callOn = pcallOn(token);
+    return `<p class="tip">🔔 ${v.remindOn ? `매일 ${timeWord(v.remindAt)}에 알려 드려요. 자녀가 안부를 부탁해도 알림이 와요.` : '자녀가 안부를 부탁하면 알림이 와요.'}</p>
+    ${call ? `<section class="pp-call" id="pp-call">
+      <label class="toggle pp-toggle"><span><b>⏰ 안부 알람 받기</b><small>알림 30분 뒤에도 안부를 안 보내셨으면 알람처럼 울려요. 하루 최대 2번, 밤에는 쉬어요</small></span>
+        <input type="checkbox" id="pp-call-on" ${callOn ? 'checked' : ''}></label>
+      ${callOn ? `<p class="pp-fs" id="pp-fs" hidden>잠금 화면에서도 크게 뜨게 하려면 한 번만 허용해 주세요.
         <button type="button" class="btn block" id="pp-fs-btn">허용하러 가기</button></p>
-      <button type="button" class="btn ghost block" id="pp-test">📞 전화 알림 미리 들어 보기</button>
-    </div>` : ''}`;
+      <button type="button" class="btn ghost block" id="pp-test">⏰ 알람 미리 들어 보기</button>` : ''}
+    </section>` : ''}`;
   }
   return `<section class="pp-card">
     <p class="pp-title">🔔 매일 알림 받기</p>
@@ -673,10 +693,24 @@ function parentPushHtml(v, token) {
 function bindParentPush(token) {
   if (!isApp) return;
   const reg = () => registerPush(async (t, plat) => {
-    try { await store.registerParentPush(token, t, plat); localStorage.setItem(PP_KEY(token), '1'); } catch { /* 다음에 다시 */ }
+    try { await store.registerParentPush(token, t, plat); lsSet(PP_KEY(token), '1'); lsSet(PTOK_KEY(token), t); } catch { /* 다음에 다시 */ }
   });
   if (ppOn(token) && !sessionStorage.getItem(PP_KEY(token))) { sessionStorage.setItem(PP_KEY(token), '1'); reg(); }
-  if ($app.querySelector('#pp-call')) {
+  const sw = $app.querySelector('#pp-call-on');
+  if (sw) {
+    sw.onchange = async () => {
+      const push = lsGet(PTOK_KEY(token));
+      if (!push) { sw.checked = !sw.checked; reg(); return toast('알림 연결을 다시 하는 중이에요. 잠시 뒤 다시 눌러 주세요'); }
+      sw.disabled = true;
+      try {
+        await store.parentCallOpt(token, push, sw.checked);
+        lsSet(PCALL_KEY(token), sw.checked ? '1' : '0');
+        toast(sw.checked ? '안부 알람을 켰어요 ⏰' : '안부 알람을 껐어요');
+        await refreshView({ force: true });
+      } catch (e) { sw.checked = !sw.checked; sw.disabled = false; toast(e.message); }
+    };
+  }
+  if ($app.querySelector('#pp-test')) {
     callStatus().then((s) => { const el = $app.querySelector('#pp-fs'); if (el && s && !s.fullScreen) el.hidden = false; });
     $app.querySelector('#pp-fs-btn').onclick = () => openCallSettings();
     $app.querySelector('#pp-test').onclick = () => {
@@ -694,6 +728,20 @@ function bindParentPush(token) {
     // 토큰은 곧 도착한다 — 저장되면 안내가 바뀐다
     setTimeout(() => { if (ppOn(token)) { toast('알림을 켰어요 🔔'); refreshView({ force: true }); } else b.disabled = false; }, 2500);
   };
+}
+
+// 큰 '취소' 막대: ms 안에 취소를 안 누르면 run() (같은 막대가 떠 있으면 바꿔치기)
+let undoTimer = null;
+function undoBar(text, ms, run) {
+  document.querySelector('.undo-bar')?.remove();
+  clearTimeout(undoTimer);
+  const bar = document.createElement('div');
+  bar.className = 'undo-bar';
+  bar.setAttribute('role', 'status');
+  bar.innerHTML = `<span>${esc(text)}</span><button type="button">취소</button><i style="animation-duration:${ms}ms"></i>`;
+  document.body.append(bar);
+  bar.querySelector('button').onclick = () => { clearTimeout(undoTimer); bar.remove(); toast('취소했어요'); };
+  undoTimer = setTimeout(() => { bar.remove(); run(); }, ms);
 }
 
 // ───────── 부모님 화면 ─────────
@@ -758,8 +806,13 @@ async function renderParent(token, justSent = false) {
       return false;
     }
   };
+  // 잘못 누른 기분이 형제들에게 바로 가지 않게: 3초 동안 '취소'를 보여 준 뒤 보낸다
   $app.querySelectorAll('[data-mood]').forEach((b) => {
-    b.onclick = () => send({ mood: b.dataset.mood }, moodOf(b.dataset.mood).label);
+    b.onclick = () => {
+      const m = moodOf(b.dataset.mood);
+      haptic(60);
+      undoBar(`${m.emoji} ${m.label} — 보내는 중이에요`, 3000, () => send({ mood: m.id }, m.label));
+    };
   });
   bindComposer($app.querySelector('#msg'), { folder: v.familyId, onSend: (d) => send(d, josa(sentLabel(d), '을/를')) });
   bindParentPush(token);
