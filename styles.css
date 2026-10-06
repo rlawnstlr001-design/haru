@@ -310,3 +310,5 @@ html.landing #app { display: none; }
 .pp-fs .btn { margin-top: 10px; }
 a.pp-btn { display: flex; align-items: center; justify-content: center; text-decoration: none; }
 .pp-note { margin: 8px 0 0; font-size: 14px; color: var(--muted); text-align: center; }
+/* 띄어쓰기 없는 긴 호칭(최대 20자)도 좁은 화면에서 줄바꿈 */
+.day-head h1, .cover h1, .page-title, .greet, .sent-title, .lp-hero h1 { overflow-wrap: anywhere; }

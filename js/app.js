@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610060938';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610060938';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610060948';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610060948';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610060938';
+} from './native.js?v=202610060948';
 
 const $app = document.getElementById('app');
 let store;
@@ -67,6 +67,11 @@ function initPullToRefresh() {
     ind.style.transform = '';
   });
 }
+
+// 마지막으로 본 가족·부모님 화면 (앱을 아이콘으로 켜면 거기서 시작)
+const LAST_KEY = 'haru:lastView';
+const rememberView = (h) => { try { localStorage.setItem(LAST_KEY, h); } catch { /* 저장 불가 */ } };
+const lastView = () => { try { return localStorage.getItem(LAST_KEY); } catch { return null; } };
 
 // 안드로이드 뒤로가기: 앱 안에서 이동한 만큼만 뒤로, 첫 화면에서는 "한 번 더 누르면 종료"
 let depth = 0;
@@ -290,18 +295,20 @@ async function renderFamily(fid) {
   if (!unsub) unsub = store.subscribe(fid, () => refreshView());
   view = () => renderFamily(fid);
   lastRender = Date.now();
+  rememberView(`#/f/${fid}`);
 
   const P = f.parentName;
   const today = f.checkins.filter((c) => c.day === f.today);
   // 방을 만든 날은 마감 경고를 하지 않는다 (부모님이 링크를 받기도 전이라)
   const createdToday = new Date(f.createdAt).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === f.today;
   const late = !today.length && !createdToday && kstNowMinutes() > toMinutes(f.deadline);
-  const fresh = sessionStorage.getItem(`haru:fresh:${fid}`) && !f.checkins.length; // 부모님이 한 번 보내면 안내 끝
+  const fresh = !f.checkins.length; // 부모님이 처음 안부를 보내실 때까지 '처음 할 일' 안내를 남긴다
+  // 날짜 계산은 정오(UTC) 기준 — 폰이 미국·베트남 시간이어도 요일이 밀리지 않게
   const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(`${f.today}T00:00:00+09:00`);
-    d.setDate(d.getDate() - (6 - i));
-    const iso = d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-    return { iso, label: '일월화수목금토'[d.getDay()], ok: f.checkins.some((c) => c.day === iso), isToday: iso === f.today };
+    const d = new Date(`${f.today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - (6 - i));
+    const iso = d.toISOString().slice(0, 10);
+    return { iso, label: '일월화수목금토'[d.getUTCDay()], ok: f.checkins.some((c) => c.day === iso), isToday: iso === f.today };
   });
   const past = f.checkins.filter((c) => c.day !== f.today);
   // 가족 이야기: 최근 3일 (오늘·어제·그제)
@@ -700,6 +707,7 @@ async function renderParent(token, justSent = false) {
   }
   view = () => renderParent(token);
   lastRender = Date.now();
+  rememberView(`#/p/${token}`);
   const kids = joinNames(v.children);
   const sent = v.todayCheckins.length > 0;
   const hearts = [...new Set(v.todayCheckins.flatMap((c) => c.hearts))];
@@ -769,10 +777,16 @@ async function renderParent(token, justSent = false) {
 (async () => {
   store = await createStore(window.HARU_CONFIG);
   window.__haru = { store };
-  history.replaceState({ d: 0 }, '');
+  // 앱을 아이콘으로 켰으면(해시 없음) 마지막으로 본 화면부터
+  const startAt = isApp && (!location.hash || location.hash === '#/') ? lastView() : null;
+  history.replaceState({ d: 0 }, '', startAt ? `#${startAt.slice(1)}` : undefined);
   addEventListener('hashchange', onHashChange);
   initNative({
-    onOpenHash: (h) => { if (location.hash !== h) location.hash = h; else refreshView({ force: true }); },
+    // 알림·링크로 앱이 열릴 때: 첫 화면이면 그 화면을 첫 화면으로(뒤로가기가 만들기 화면으로 가지 않게)
+    onOpenHash: (h) => {
+      if (location.hash === h) return refreshView({ force: true });
+      if (depth === 0) replaceHash(h); else location.hash = h;
+    },
     onBack,
     onResume: () => refreshView(),
   });
