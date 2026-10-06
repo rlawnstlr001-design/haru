@@ -20,96 +20,130 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap">
-  <link rel="stylesheet" href="styles.css?v=202610061724">
+  <link rel="stylesheet" href="styles.css?v=202610061938">
   <!-- Supabase 클라이언트(package-lock 버전 고정, UMD → window.supabase). CDN 최신판을 받지 않아 갑자기 깨지거나 해외 약한 망에서 멈추지 않게 -->
-  <script src="js/supabase.js?v=202610061724"></script>
-  <script src="config.js?v=202610061724"></script>
+  <script src="js/supabase.js?v=202610061938"></script>
+  <script src="config.js?v=202610061938"></script>
   <script>
     // 소개 페이지는 웹에서 주소만 열었을 때만(#how 같은 쪽 안 이동 포함). 앱 안이거나 #/… 링크면 바로 앱 화면 (깜빡임 방지)
     if (location.hash.startsWith('#/') || window.Capacitor?.isNativePlatform?.()) document.documentElement.classList.remove('landing');
+    // 소개 페이지 글꼴(Noto Sans KR)은 웹 소개 페이지일 때만 불러온다 — 앱 화면은 기존 글꼴 그대로
+    else {
+      const l = document.createElement('link'); l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap'; document.head.appendChild(l);
+    }
   </script>
 </head>
 <body>
   <main id="landing">
     <header class="lp-top">
-      <span class="wordmark">안부한장</span>
+      <a class="lp-brand" href="#top"><i aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 5 6.4 5c2 0 3.3 1.1 4.1 2.3h3c.8-1.2 2.1-2.3 4.1-2.3C21 5 23.1 8.4 21.6 11.8 19.5 16.4 12 21 12 21z"/></svg></i>안부한장</a>
       <a class="lp-top-link" href="#/start">가족 방 만들기</a>
     </header>
 
-    <section class="lp-hero">
-      <div class="lp-hero-text">
-        <p class="kicker">따로 사는 부모님과 형제들을 위한</p>
-        <h1>부모님의 오늘,<br>한 장으로 받아보세요</h1>
-        <p class="lp-lead">부모님은 받은 링크에서 버튼 한 번, 사진 한 장으로 오늘 안부를 보내요. 형제들은 같은 방에서 같이 보고, 하트로 답해요.</p>
-        <div class="lp-cta">
-          <a class="btn primary" href="#/start">가족 방 만들기</a>
-          <a class="btn ghost" href="#how">어떻게 쓰나요</a>
+    <section class="lp-hero-wrap" id="top">
+      <div class="lp-hero">
+        <div class="lp-hero-text">
+          <h1>부모님이 괜찮으시면,<br><em>나도 마음이 놓여요</em></h1>
+          <p class="lp-lead">부모님은 버튼 한 번으로 오늘 안부를 보내고, 형제들은 같은 알림을 같이 받아요. 매일 전화하지 않아도 오늘 괜찮으신지 알 수 있어요.</p>
+          <div class="lp-cta">
+            <a class="lp-btn navy" href="#/start">가족 방 만들기</a>
+            <a class="lp-btn text" href="#how">어떻게 쓰나요</a>
+          </div>
+          <p class="lp-store" id="lp-store">안드로이드·아이폰 앱은 출시 준비 중이에요. 지금은 웹에서 바로 써 볼 수 있어요.</p>
+          <p class="lp-recent" id="lp-recent" hidden></p>
         </div>
-        <p class="lp-store" id="lp-store">안드로이드·아이폰 앱은 출시 준비 중이에요. 지금은 웹에서 바로 써 볼 수 있어요.</p>
-        <p class="lp-recent" id="lp-recent" hidden></p>
-      </div>
-      <div class="lp-hero-art" aria-hidden="true">
-        <figure class="polaroid lp-card">
-          <div class="face"><span class="e">😊</span><span class="l">좋아요</span></div>
-          <figcaption class="caption">
-            <p class="note">오늘 텃밭에 상추가 많이 났다</p>
-            <span class="mood-tag good">오전 9:12 · 엄마</span>
-          </figcaption>
-          <p class="hearted">💗 형제 3명이 하트를 보냈어요</p>
-        </figure>
-      </div>
-    </section>
 
-    <section class="lp-sec lp-for">
-      <h2 class="lp-h">이런 가족에게 맞아요</h2>
-      <div class="lp-grid three">
-        <article class="lp-tile"><b>🏡 부모님과 따로 살아요</b><p>매일 전화하긴 어렵지만, 오늘 괜찮으신지는 알고 싶을 때.</p></article>
-        <article class="lp-tile"><b>👨‍👩‍👧 형제가 여럿이에요</b><p>누가 연락드렸는지 서로 몰라 겹치거나 비는 날이 생길 때.</p></article>
-        <article class="lp-tile"><b>✈️ 해외에 살아요</b><p>시차 때문에 통화 시간을 맞추기 어려울 때. 알림은 받는 사람의 현지 시각에 맞춰 밤에는 소리 없이 와요.</p></article>
+        <div class="lp-phone-wrap" aria-hidden="true">
+          <div class="lp-phone">
+            <div class="lp-screen">
+              <p class="lp-screen-cap">우리 가족 방 · 예시 화면</p>
+              <p class="lp-screen-title">엄마의 오늘</p>
+              <div class="lp-today">
+                <div class="lp-today-head"><span class="lp-face good"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg></span><div><b>좋아요</b><small>오전 9:12</small></div></div>
+                <div class="lp-photo">사진</div>
+                <p>오늘 텃밭에 상추가 많이 났다</p>
+              </div>
+              <div class="lp-week"><span class="on">월</span><span class="on">화</span><span>수</span><span class="on">목</span><span class="on">금</span><span class="on">토</span><span class="today">일</span></div>
+            </div>
+          </div>
+          <div class="lp-noti n1"><span class="lp-noti-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 5 6.4 5c2 0 3.3 1.1 4.1 2.3h3c.8-1.2 2.1-2.3 4.1-2.3C21 5 23.1 8.4 21.6 11.8 19.5 16.4 12 21 12 21z"/></svg></span><div><b>엄마가 안부를 보냈어요</b><small>좋아요 · 사진 1장</small></div></div>
+          <div class="lp-noti n2"><div><b>형제 3명이 하트를 보냈어요</b><small>준식 · 민지 · 서연</small></div></div>
+          <div class="lp-noti n3"><div><b>민지 · 엄마께 한마디</b><small>엄마 상추 좀 남겨 두세요</small></div></div>
+        </div>
       </div>
     </section>
 
     <section class="lp-sec" id="how">
-      <h2 class="lp-h">세 단계면 시작해요</h2>
-      <ol class="lp-steps">
-        <li><i>1</i><div><b>가족 방 만들기</b><p>부모님 호칭과 내 이름, 소식을 기다릴 시각만 정하면 방이 생겨요.</p></div></li>
-        <li><i>2</i><div><b>부모님께 링크 보내기</b><p>부모님 전용 링크를 카카오톡이나 문자로 보내 드려요. 형제들에겐 가족 방 링크를 보내요.</p></div></li>
-        <li><i>3</i><div><b>부모님은 버튼 한 번</b><p>“좋아요·그럭저럭·피곤해요” 중 하나를 누르거나 사진 한 장을 보내면, 형제 모두가 같은 소식을 봐요.</p></div></li>
-      </ol>
+      <h2 class="lp-h center">알림은 이렇게 와요</h2>
+      <p class="lp-sub center">누가 연락드렸는지 몰라 겹치거나 비는 날이 없게, 정한 순서대로 차례차례.</p>
+      <div class="lp-flow">
+        <article>
+          <span class="lp-tag">부모님 폰</span>
+          <div class="lp-bubble"><b>오늘 하루 어떠세요?</b><small>안부한장 · 오전 9:00</small></div>
+          <p>부모님 폰에 앱을 깔아 두면 자녀가 정한 시각에 매일 알림이 가요.</p>
+        </article>
+        <article>
+          <span class="lp-tag">형제 모두</span>
+          <div class="lp-bubble"><b>엄마가 안부를 보냈어요</b><small>좋아요 · 오전 9:12</small></div>
+          <p>부모님이 보내면 형제 모두가 같은 소식을 받아요. 하트와 한마디로 답해요.</p>
+        </article>
+        <article>
+          <span class="lp-tag">소식이 늦으면</span>
+          <div class="lp-bubble"><b>엄마 안부가 아직 없어요</b><small>오늘 안부 부탁하기</small></div>
+          <p>정한 시각까지 없으면 먼저 한 명에게, 그래도 없으면 다른 형제에게 알려요.</p>
+        </article>
+      </div>
     </section>
 
     <section class="lp-sec lp-parent">
       <div class="lp-parent-text">
-        <p class="kicker">부모님 화면</p>
-        <h2 class="lp-h">큰 글씨, 큰 버튼 하나</h2>
-        <p>부모님 화면에는 고를 게 많지 않아요. 기분 버튼 세 개, 사진 보내기, 한마디 남기기. 보낸 뒤에는 자녀들이 보낸 하트가 보여요.</p>
+        <p class="lp-kicker">부모님 화면</p>
+        <h2 class="lp-h">큰 글씨,<br>큰 버튼 세 개</h2>
+        <p>고를 게 많지 않아요. 기분 버튼 세 개와 사진·한마디 보내기. 잘못 누르셨으면 3초 안에 취소할 수 있고, 보낸 뒤에는 자녀들이 보낸 하트와 한마디가 보여요.</p>
+        <ul>
+          <li>링크를 열면 바로 버튼이 보여요</li>
+          <li>안부 알람을 직접 켜 두시면, 안 보내신 날 알람처럼 울려요</li>
+          <li>밤 10시부터 아침 8시까지는 소리 없이</li>
+        </ul>
       </div>
-      <div class="lp-phone" aria-hidden="true">
-        <p class="date">오늘</p>
+      <div class="lp-parent-phone" aria-hidden="true">
+        <p class="lp-screen-cap">부모님 화면 · 예시</p>
         <p class="lp-greet">엄마, 오늘 어떠세요?</p>
-        <div class="mood-tiles">
-          <span class="mood-tile good"><span class="e">😊</span>좋아요</span>
-          <span class="mood-tile ok"><span class="e">🙂</span>그럭저럭</span>
-          <span class="mood-tile tired"><span class="e">😮‍💨</span>피곤해요</span>
+        <span class="lp-mood good"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>좋아요</span>
+        <span class="lp-mood soso"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 15h8"/><path d="M9 9h.01M15 9h.01"/></svg>그럭저럭</span>
+        <span class="lp-mood tired"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 16s1.5-2 4-2 4 2 4 2"/><path d="M9 9h.01M15 9h.01"/></svg>피곤해요</span>
+        <span class="lp-mood-photo">사진과 한마디 보내기</span>
+      </div>
+    </section>
+
+    <section class="lp-sec lp-fam-wrap">
+      <div class="lp-fam">
+        <h2 class="lp-h">이런 가족에게 맞아요</h2>
+        <div class="lp-grid">
+          <article><h3>부모님과 따로 살아요</h3><p>매일 전화하긴 어렵지만, 오늘 괜찮으신지는 알고 싶을 때.</p></article>
+          <article><h3>형제가 여럿이에요</h3><p>한 방에 10명까지. 누가 연락드렸는지 다 같이 봐요.</p></article>
+          <article><h3>해외에 살아요</h3><p>시차가 있어도 괜찮아요. 밤 시간 조용한 알림은 받는 사람의 현지 시각에 맞춰요.</p></article>
         </div>
       </div>
     </section>
 
-    <section class="lp-sec">
+    <section class="lp-sec lp-feat">
       <h2 class="lp-h">안부한장으로 할 수 있는 것</h2>
-      <div class="lp-grid two">
-        <article class="lp-tile"><b>📷 오늘의 한 장</b><p>부모님이 보낸 사진이나 기분이 그날의 카드가 돼요. 지난 소식은 앨범처럼 쌓여요.</p></article>
-        <article class="lp-tile"><b>🗓️ 이번 주 도장</b><p>일주일 중 소식이 온 날이 도장으로 찍혀 한눈에 보여요.</p></article>
-        <article class="lp-tile"><b>💗 하트로 답하기</b><p>형제 누구든 하트를 보내면 부모님 화면에 보여요.</p></article>
-        <article class="lp-tile"><b>⏰ 소식이 늦으면 알림</b><p>정한 시각까지 소식이 없으면 먼저 한 명에게, 그래도 없으면 다른 형제에게 앱 알림을 보내요.</p></article>
-        <article class="lp-tile"><b>🔔 부모님께 매일 알림</b><p>부모님 폰에 앱을 깔아 두면 정한 시각에 "오늘 하루 어떠세요?" 알림이 가요. 오늘 안부 부탁도 버튼 하나로 바로 알림이 가요.</p></article>
-        <article class="lp-tile"><b>🌙 밤에는 조용히</b><p>받는 사람의 현지 시각으로 밤 10시부터 아침 8시까지는 알림이 소리 없이 와요.</p></article>
+      <div class="lp-grid">
+        <article><h3>오늘의 한 장</h3><p>사진과 한마디를 한 번에 보내면 그날의 카드가 돼요. 지난 소식은 앨범처럼 쌓여요.</p></article>
+        <article><h3>가족 이야기</h3><p>자녀가 남긴 한마디가 부모님 화면에도 보여요. 하트로도 답해요.</p></article>
+        <article><h3>이번 주 도장</h3><p>일주일 중 소식이 온 날이 도장으로 찍혀 한눈에 보여요.</p></article>
+        <article><h3>부모님께 매일 알림</h3><p>정한 시각에 "오늘 하루 어떠세요?" 알림이 가요. 오늘 안부 부탁도 버튼 하나로 바로 가요.</p></article>
+        <article><h3>소식이 늦으면 차례로</h3><p>정한 시각까지 없으면 먼저 한 명에게, 그래도 없으면 다른 형제에게 앱 알림을 보내요.</p></article>
+        <article><h3>밤에는 조용히</h3><p>받는 사람의 현지 시각으로 밤 10시부터 아침 8시까지는 알림이 소리 없이 와요.</p></article>
       </div>
     </section>
 
     <section class="lp-sec lp-faq">
       <h2 class="lp-h">자주 묻는 질문</h2>
       <details><summary>부모님은 어떻게 쓰시나요?</summary><p>자녀가 보내 드린 부모님 전용 링크를 열면 바로 기분 버튼이 보여요. 링크를 홈 화면이나 즐겨찾기에 추가해 두면 매일 한 번에 여실 수 있어요.</p></details>
+      <details><summary>부모님 폰에 앱을 꼭 깔아야 하나요?</summary><p>아니요. 링크만으로도 안부를 보내실 수 있어요. 매일 알림과 안부 알람은 부모님 폰에 앱이 있을 때 받아요.</p></details>
       <details><summary>형제는 몇 명까지 같이 볼 수 있나요?</summary><p>가족 방 링크를 받은 형제·배우자가 들어와 이름을 정하면 같이 볼 수 있어요. 한 방에 10명까지 함께할 수 있어요.</p></details>
       <details><summary>알림은 어떻게 받나요?</summary><p>자녀는 새 소식과 늦음 알림을, 부모님은 매일 안부 알림과 안부 부탁 알림을 안부한장 앱에서 받아요. 앱은 출시 준비 중이고, 웹에서도 가족 방을 열면 오늘 소식을 바로 확인할 수 있어요.</p></details>
       <details><summary>해외에 살아도 쓸 수 있나요?</summary><p>네. 소식을 기다리는 시각은 한국 시간 기준이고, 밤 시간 조용한 알림은 받는 사람이 있는 곳의 시각에 맞춰요.</p></details>
@@ -118,13 +152,11 @@
     </section>
 
     <section class="lp-sec lp-final">
-      <div class="stack-art" aria-hidden="true"><i>🌼</i><i>☕</i><i>💛</i></div>
-      <h2 class="lp-h">오늘 안부부터 받아 볼까요?</h2>
-      <a class="btn primary" href="#/start">가족 방 만들기</a>
+      <h2>오늘 안부,<br><em>알림 한 줄로</em> 받아 보세요</h2>
+      <a class="lp-btn navy" href="#/start">가족 방 만들기</a>
     </section>
 
     <footer class="lp-foot">
-      <span class="wordmark">안부한장</span>
       <p>운영: 소소랩 · 문의 <a href="mailto:enbbanghaza@gmail.com">enbbanghaza@gmail.com</a></p>
       <p><a href="privacy.html">개인정보처리방침</a></p>
     </footer>
@@ -132,6 +164,6 @@
 
   <div id="app"><div class="boot">불러오는 중…</div></div>
   <div id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=202610061724"></script>
+  <script type="module" src="js/app.js?v=202610061938"></script>
 </body>
 </html>
