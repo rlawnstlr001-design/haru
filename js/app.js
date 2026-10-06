@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610060902';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610060902';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610060938';
+import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610060938';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610060902';
+} from './native.js?v=202610060938';
 
 const $app = document.getElementById('app');
 let store;
@@ -485,9 +485,16 @@ function bindHearts(f, myId) {
   });
 }
 
+// 화면의 사진 주소를 한 번에 받아 채운다 (못 받은 사진은 빼고)
 async function loadPhotos() {
-  for (const img of $app.querySelectorAll('[data-photo]')) {
-    try { img.src = await store.photoUrl(img.dataset.photo); } catch { img.remove(); }
+  const imgs = [...$app.querySelectorAll('[data-photo]')];
+  if (!imgs.length) return;
+  let urls = {};
+  try { urls = await store.photoUrls([...new Set(imgs.map((i) => i.dataset.photo))]); } catch { /* 아래에서 뺀다 */ }
+  for (const img of imgs) {
+    const url = urls[img.dataset.photo];
+    if (!url) { img.remove(); continue; }
+    img.src = url;
     img.onclick = () => showPhoto(img.src);
   }
 }

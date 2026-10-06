@@ -132,13 +132,34 @@ export class Store {
     if (error) throw new Error(error.message);
     return path;
   }
+  // 사진 주소: Edge Function `media`가 가족 방을 확인하고 1시간짜리 서명 주소를 준다.
+  // (Storage 읽기를 공개 키에 열어 두면 버킷 목록 = 가족 id가 밖에서 보여서 막았다 — 10/6)
+  async photoUrls(paths) {
+    const now = Date.now();
+    const out = {};
+    const need = new Map(); // 가족 id → 경로들
+    for (const p of paths) {
+      const hit = this.#signed.get(p);
+      if (hit && hit.exp > now) { out[p] = hit.url; continue; }
+      const scope = p.split('/')[0];
+      need.set(scope, [...(need.get(scope) || []), p]);
+    }
+    for (const [scope, list] of need) {
+      for (let i = 0; i < list.length; i += 50) {
+        const { data, error } = await this.#sb.functions.invoke('media', { body: { bucket: 'haru-photos', scope, paths: list.slice(i, i + 50) } });
+        if (error) throw new Error('사진을 불러오지 못했어요');
+        for (const [p, url] of Object.entries(data?.urls || {})) {
+          this.#signed.set(p, { url, exp: now + 50 * 60 * 1000 });
+          out[p] = url;
+        }
+      }
+    }
+    return out;
+  }
   async photoUrl(path) {
-    const hit = this.#signed.get(path);
-    if (hit && hit.exp > Date.now()) return hit.url;
-    const { data, error } = await this.#sb.storage.from('haru-photos').createSignedUrl(path, 3600);
-    if (error) throw new Error(error.message);
-    this.#signed.set(path, { url: data.signedUrl, exp: Date.now() + 50 * 60 * 1000 });
-    return data.signedUrl;
+    const url = (await this.photoUrls([path]))[path];
+    if (!url) throw new Error('사진을 불러오지 못했어요');
+    return url;
   }
 
   subscribe(fid, cb) {
