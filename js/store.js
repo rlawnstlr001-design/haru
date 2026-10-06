@@ -150,6 +150,8 @@ export class Store {
 }
 
 export async function createStore(config) {
+  // 스토어 스크린샷용 가상 데이터 — tools/store-shots/shot.html(같은 출처의 부모 창)이 넣어 준다. 실서버를 건드리지 않는다
+  try { if (window.parent !== window && window.parent.HARU_DEMO_STORE) return window.parent.HARU_DEMO_STORE; } catch { /* 다른 출처 */ }
   // 앱은 js/supabase.js(빌드 때 내장)가 window.supabase를 만든다 → 인터넷 없이 켜도 화면이 뜬다. 웹은 CDN
   const { createClient } = window.supabase?.createClient ? window.supabase
     : await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
