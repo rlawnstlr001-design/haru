@@ -2,7 +2,7 @@
    한지 미색 배경 · 먹색 남색 · 연지색 하트 · 폴라로이드/편지지 카드 · 제목은 고운바탕(명조)
    트립N빵(주황·테두리 카드·칩)과 다른 얼굴을 갖는다 */
 :root {
-  --bg: #F3EEE6; --paper: #FFFCF7; --paper-2: #F7F1E7; --ink: #2B2722; --muted: #857B6D; --line: #E3DACB;
+  --bg: #F3EEE6; --paper: #FFFCF7; --paper-2: #F7F1E7; --ink: #2B2722; --muted: #6F6658; --line: #E3DACB;
   --navy: #2F4260; --navy-ink: #22324B; --navy-soft: #E4E9F1; --on-navy: #FFFFFF;
   --rose: #D45D72; --rose-soft: #FBE7EB; --sage: #5C8A70; --sage-soft: #E3EEE7;
   --amber: #B97A22; --amber-soft: #F7EBD6; --sun-soft: #FFF2C9; --lav-soft: #ECE8F5;
@@ -72,7 +72,7 @@ h2 span { font-family: var(--sans); font-size: 14px; color: var(--muted); font-w
 .hearted { margin: 6px 4px 0; font-size: 14px; color: var(--rose); }
 .heart { border: 0; background: var(--rose-soft); color: var(--rose); border-radius: 99px; min-height: 40px; min-width: 56px; padding: 4px 14px; font-weight: 800; cursor: pointer; }
 .heart.on { background: var(--rose); color: #fff; }
-.heart.sm { min-height: 30px; min-width: 0; padding: 2px 9px; font-size: 13px; }
+.heart.sm { min-height: 40px; min-width: 44px; padding: 2px 10px; font-size: 14px; }
 
 /* ── 버튼 ── */
 .btn { border: 0; border-radius: 99px; padding: 13px 20px; min-height: 52px; font-weight: 800; cursor: pointer; background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
@@ -214,7 +214,7 @@ select.input { appearance: none; -webkit-appearance: none; background: transpare
 .b-body .photo { width: 100%; max-width: 240px; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; margin: 4px 0; cursor: zoom-in; background: var(--paper-2); }
 .b-meta { display: block; font-size: 12px; color: var(--muted); }
 .b-heart { color: var(--rose); font-weight: 700; }
-.b-del { border: 0; background: none; padding: 0; color: var(--muted); font-size: 12px; text-decoration: underline; cursor: pointer; }
+.b-del { border: 0; background: none; padding: 10px 6px; margin: -10px -6px; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; }
 
 /* ── 부모님 화면: 자녀들이 보낸 이야기 ── */
 .kids-talk { margin: 18px 0 8px; }
