@@ -55,8 +55,13 @@ export class Store {
     return this.#rpc('hb_create_family', { p_parent_name: parentName, p_child_name: childName, p_deadline: deadline, p_device: deviceId() });
   }
   async getFamily(fid) {
-    const f = await this.#rpc('hb_get_family', { p_family: fid });
+    // 오늘 '내가 전화드릴게요'를 맡은 형제도 같이 (hb_012 이전 서버면 없음)
+    const [f, call] = await Promise.all([
+      this.#rpc('hb_get_family', { p_family: fid }),
+      this.#rpc('hb_call_today', { p_family: fid }).catch(() => null),
+    ]);
     if (!f) throw new Error('가족 방을 찾을 수 없어요');
+    f.callToday = call;
     rememberFamily(f);
     return f;
   }
@@ -89,6 +94,12 @@ export class Store {
   async deleteFamily(fid, memberId) {
     await this.#rpc('hb_delete_family', { p_family: fid, p_member: memberId });
     this.#ping(fid);
+  }
+  // 오늘 전화를 맡기/취소 → 오늘 맡은 사람(없으면 null)
+  async callClaim(fid, memberId, on) {
+    const r = await this.#rpc('hb_call_claim', { p_family: fid, p_member: memberId, p_on: on });
+    this.#ping(fid);
+    return r;
   }
   async unlinkParent(fid, memberId) {
     await this.#rpc('hb_unlink_parent', { p_family: fid, p_member: memberId });

@@ -105,6 +105,14 @@ export function syncStatusBar() {
   if (platform === 'android') StatusBar.setBackgroundColor({ color: dark ? '#1B1A18' : '#F3EEE6' }).catch(() => {});
 }
 
+// 별점 요청(Play 인앱 리뷰) — 미리 묻지 않고 바로 띄운다(구글 정책). 한 기기에 한 번만. 스토어 설치본에서만 실제로 뜬다 (10/7)
+const Review = plug('InAppReview');
+export async function askReview(key) {
+  if (!isApp || !Review) return false;
+  try { if (localStorage.getItem(key)) return false; localStorage.setItem(key, String(Date.now())); } catch { return false; }
+  try { await Review.requestReview(); return true; } catch { return false; }
+}
+
 export const exitApp = () => App?.exitApp();
 
 // 딥링크(안부한장 링크로 앱 열기)·알림 탭·안드로이드 뒤로가기·앱으로 돌아옴·앱을 보는 중에 온 알림

@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610071620';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610071620';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610071637';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610071637';
 import {
-  isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission,
+  isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610071620';
+} from './native.js?v=202610071637';
 
 const $app = document.getElementById('app');
 let store;
@@ -382,6 +382,7 @@ async function renderFamily(fid) {
             </div>
           </article>
           <button class="btn primary block" id="ask">${f.parentDevices ? `📳 ${esc(P)} 폰으로 안부 부탁하기` : '💌 오늘 안부 부탁하기'}</button>
+          ${callClaimHtml(f, myId, late)}
           <p class="muted small parent-state">${f.parentDevices
             ? `📱 ${esc(P)} 폰에 앱이 연결돼 있어요${f.parentCallDevices ? ' · 안부 알람 켜짐' : ''}`
             : `📱 ${esc(P)} 폰에 앱이 아직 없어 링크로 부탁해요. <a href="#/f/${esc(fid)}/s">연결 방법</a>`}</p>`}
@@ -396,6 +397,7 @@ async function renderFamily(fid) {
     <section class="block">
       <h2>이번 주<span>7일 중 ${days.filter((d) => d.ok).length}일 소식</span></h2>
       <div class="stamps">${days.map((d) => `<div class="stamp ${d.ok ? 'ok' : ''} ${d.isToday ? 'today' : ''}"><i>${d.ok ? '✓' : ''}</i><span>${d.label}</span></div>`).join('')}</div>
+      <button class="pill week-share" id="week-share">📤 이번 주 소식 형제들과 공유</button>
     </section>
 
     ${past.length ? `<section class="block"><h2>지난 소식</h2><div class="album">${past.slice(0, 20).map((c) => miniCard(c, f, myId)).join('')}</div></section>` : ''}
@@ -425,6 +427,26 @@ async function renderFamily(fid) {
   $app.querySelector('#send-parent3')?.addEventListener('click', sendParent);
   $app.querySelector('#invite')?.addEventListener('click', invite);
   $app.querySelector('#invite2')?.addEventListener('click', invite);
+  // 이번 주 요약을 형제 단톡방에 (가족 방 링크와 함께 — 아직 안 들어온 형제도 들어오게)
+  $app.querySelector('#week-share')?.addEventListener('click', () => {
+    const weekStart = days[0].iso;
+    const okDays = days.filter((d) => d.ok).length;
+    const photos = f.checkins.filter((c) => c.day >= weekStart && c.photo).length;
+    const talks = (f.notes || []).filter((n) => n.day >= weekStart).length;
+    const stamps = days.map((d) => `${d.label}${d.ok ? '✓' : '·'}`).join(' ');
+    store.log(fid, 'week_shared');
+    share({ text: `📮 ${P}의 이번 주\n7일 중 ${okDays}일 안부 · 사진 ${photos}장 · 가족 이야기 ${talks}개\n${stamps}\n(안부한장)`, url: familyLink(fid) },
+      '이번 주 요약을 복사했어요. 형제 단톡방에 붙여 넣으세요');
+  });
+  // 내가 전화드릴게요 — 형제 화면에 보여서 전화가 겹치거나 비지 않게
+  const callBtn = async (on) => {
+    try { f.callToday = await store.callClaim(fid, myId, on); haptic(80); toast(on ? '형제들에게 "전화드릴게요"를 알렸어요' : '취소했어요'); await renderFamily(fid); }
+    catch (err) { toast(friendly(err)); }
+  };
+  $app.querySelector('#call-me')?.addEventListener('click', () => callBtn(true));
+  $app.querySelector('#call-cancel')?.addEventListener('click', () => callBtn(false));
+  // 부모님 안부를 7번 이상 받았으면 별점 요청 (한 기기 한 번)
+  if (isApp && f.checkins.length >= 7) setTimeout(() => askReview('haru:review'), 1500);
   // 부모님 폰이 연결돼 있으면 알림으로 바로, 아니면(또는 실패하면) 지금처럼 링크 공유
   $app.querySelector('#ask')?.addEventListener('click', async (e) => {
     const shareAsk = () => {
@@ -464,6 +486,19 @@ async function renderFamily(fid) {
   });
   loadPhotos();
   bindPushCard(fid, myId, P);
+}
+
+// 오늘 소식이 아직일 때: 누가 전화드리기로 했는지, 아니면(마감이 지났으면) '내가 전화드릴게요' 버튼
+function callClaimHtml(f, myId, late) {
+  const c = f.callToday;
+  if (c) {
+    const mine = c.memberId === myId;
+    return `<p class="call-claim">📞 <b>${esc(mine ? '내가' : josa(c.name, '이/가'))}</b> ${esc(f.parentName)}께 전화드리기로 했어요 <span class="muted small">${esc(timeLabel(c.at))}</span>
+      ${mine ? '<button type="button" class="b-del" id="call-cancel">취소</button>' : ''}</p>`;
+  }
+  if (!late) return '';
+  return `<button class="btn ghost block" id="call-me">📞 내가 전화드릴게요</button>
+    <p class="muted small call-hint">형제들 화면에 보여서 전화가 겹치거나 아무도 안 하는 일이 줄어요</p>`;
 }
 
 // 이 폰(자녀) 알림 — 이미 허용했으면 조용히 등록, 아직 안 물어봤으면 이유부터 설명, 꺼져 있으면 켜는 방법 (10/7)
