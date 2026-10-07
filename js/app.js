@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610070807';
-import { esc, toast, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610070807';
+import { createStore, me, recentFamilies, localTz } from './store.js?v=202610071534';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610071534';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610070807';
+} from './native.js?v=202610071534';
 
 const $app = document.getElementById('app');
 let store;
@@ -215,8 +215,15 @@ async function route() {
     if ((m = h.match(/^\/p\/([\w-]+)/))) return await renderParent(m[1]);
     renderHome();
   } catch (e) {
-    $app.innerHTML = `<div class="empty">${esc(e.message)}<br><br><a href="#/">처음으로</a></div>`;
+    errorScreen(e, !h.startsWith('/p/'));
   }
+}
+
+// 화면을 못 불러왔을 때 — 무엇이 문제인지 한국어로, 다시 시도 버튼 (부모님 화면에선 '처음으로'를 빼서 헷갈리지 않게)
+function errorScreen(err, home = true) {
+  $app.innerHTML = `<div class="empty err-screen" role="alert"><p>${esc(friendly(err))}</p>
+    <button class="btn primary" id="retry">다시 시도</button>${home ? '<p><a href="#/">처음으로</a></p>' : ''}</div>`;
+  $app.querySelector('#retry').onclick = () => route();
 }
 
 // ───────── 소개 페이지 (웹) ─────────
@@ -279,7 +286,7 @@ function renderHome() {
       me.set(r.id, r.memberId);
       sessionStorage.setItem(`haru:fresh:${r.id}`, '1');
       location.hash = `#/f/${r.id}`;
-    } catch (err) { toast(err.message); btn.disabled = false; }
+    } catch (err) { toast(friendly(err)); btn.disabled = false; }
   };
 }
 
@@ -428,13 +435,13 @@ async function renderFamily(fid) {
         toast(`${josa(sentLabel(d), '을/를')} 남겼어요`);
         await renderFamily(fid);
         return true;
-      } catch (e) { toast(e.message); return false; }
+      } catch (e) { toast(friendly(e)); return false; }
     },
   });
   $app.querySelectorAll('[data-del]').forEach((b) => {
     b.onclick = async () => {
       if (!confirm('이 이야기를 지울까요?')) return;
-      try { await store.deleteNote(fid, myId, b.dataset.del); await renderFamily(fid); } catch (e) { toast(e.message); }
+      try { await store.deleteNote(fid, myId, b.dataset.del); await renderFamily(fid); } catch (e) { toast(friendly(e)); }
     };
   });
   loadPhotos();
@@ -499,7 +506,7 @@ function bindHearts(f, myId) {
   $app.querySelectorAll('[data-heart]').forEach((b) => {
     b.onclick = async () => {
       b.disabled = true;
-      try { await store.heart(f.id, b.dataset.heart, myId); await renderFamily(f.id); } catch (e) { toast(e.message); b.disabled = false; }
+      try { await store.heart(f.id, b.dataset.heart, myId); await renderFamily(f.id); } catch (e) { toast(friendly(e)); b.disabled = false; }
     };
   });
 }
@@ -588,7 +595,7 @@ async function renderSettings(fid) {
   const form = $app.querySelector('#settings');
   $app.querySelector('#unlink')?.addEventListener('click', async () => {
     if (!confirm(`${P} 폰 연결을 끊을까요? 다시 연결하려면 ${P} 폰에서 '매일 알림 받기'를 눌러 주세요.`)) return;
-    try { await store.unlinkParent(fid, myId); toast('연결을 끊었어요'); await renderSettings(fid); } catch (err) { toast(err.message); }
+    try { await store.unlinkParent(fid, myId); toast('연결을 끊었어요'); await renderSettings(fid); } catch (err) { toast(friendly(err)); }
   });
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -611,7 +618,7 @@ async function renderSettings(fid) {
       // 가족 화면의 ⚙로 들어왔으면 뒤로(기록이 쌓이지 않게), 링크로 바로 왔으면 가족 화면으로
       if (sessionStorage.getItem('haru:settingsFrom') === fid) history.back();
       else replaceHash(`#/f/${fid}`);
-    } catch (err) { toast(err.message); btn.disabled = false; }
+    } catch (err) { toast(friendly(err)); btn.disabled = false; }
   };
 }
 
@@ -638,7 +645,7 @@ function renderJoin(f) {
       const id = exist ? exist.id : (await store.join(f.id, n)).id;
       me.set(f.id, id);
       route();
-    } catch (err) { toast(err.message); }
+    } catch (err) { toast(friendly(err)); }
   };
 }
 
@@ -707,7 +714,7 @@ function bindParentPush(token) {
         lsSet(PCALL_KEY(token), sw.checked ? '1' : '0');
         toast(sw.checked ? '안부 알람을 켰어요 ⏰' : '안부 알람을 껐어요');
         await refreshView({ force: true });
-      } catch (e) { sw.checked = !sw.checked; sw.disabled = false; toast(e.message); }
+      } catch (e) { sw.checked = !sw.checked; sw.disabled = false; toast(friendly(e)); }
     };
   }
   if ($app.querySelector('#pp-test')) {
@@ -801,7 +808,7 @@ async function renderParent(token, justSent = false) {
       scrollTo({ top: 0, behavior: 'smooth' });
       return true;
     } catch (e) {
-      toast(e.message);
+      toast(friendly(e));
       $app.querySelectorAll('button').forEach((b) => { b.disabled = false; });
       return false;
     }
@@ -821,7 +828,7 @@ async function renderParent(token, justSent = false) {
     b.onclick = async () => {
       b.disabled = true;
       try { if (await store.parentHeart(token, v.familyId, b.dataset.pheart)) haptic(120); await renderParent(token); }
-      catch (e) { toast(e.message); b.disabled = false; }
+      catch (e) { toast(friendly(e)); b.disabled = false; }
     };
   });
 }

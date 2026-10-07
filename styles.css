@@ -395,3 +395,7 @@ a.pp-btn { display: flex; align-items: center; justify-content: center; text-dec
 .undo-bar span { flex: 1; } .undo-bar button { border: 0; border-radius: 99px; background: #fff; color: var(--navy); font-size: 20px; font-weight: 900; padding: 12px 22px; cursor: pointer; }
 .undo-bar i { position: absolute; left: 0; bottom: 0; height: 5px; width: 100%; background: var(--rose); transform-origin: left; animation: undo-shrink linear forwards; }
 @keyframes undo-shrink { to { transform: scaleX(0); } }
+/* 못 불러왔을 때 화면 (10/7) */
+.err-screen p { margin: 0 0 18px; word-break: keep-all; }
+.err-screen .btn { min-height: 52px; padding: 12px 28px; }
+.err-screen p:last-child { margin: 18px 0 0; }

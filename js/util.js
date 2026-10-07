@@ -63,3 +63,14 @@ export function josa(word, pair) {
 export function timeLabel(iso) {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 }
+
+// 오류를 사람이 읽을 한국어로 (10/7) — 서버가 한국어로 거절한 이유는 그대로 보여 주고, 영어 기술 문구는 바꿔 말한다
+export function friendly(err) {
+  const m = String(err?.message || err || '');
+  if (/[가-힣]/.test(m)) return m;
+  if ((typeof navigator !== 'undefined' && !navigator.onLine) || /fetch|network|load failed/i.test(m)) return '인터넷 연결이 불안정해요. 연결을 확인하고 다시 해 주세요.';
+  if (/429|rate.?limit|too many/i.test(m)) return '요청이 너무 많아요. 잠시 뒤에 다시 해 주세요.';
+  if (/timeout|timed out|50[234]/i.test(m)) return '서버 응답이 늦어요. 잠시 뒤에 다시 해 주세요.';
+  if (/jwt|apikey|401|403|permission/i.test(m)) return '접속 정보가 맞지 않아요. 앱을 새로 고친 뒤 다시 해 주세요.';
+  return '잠시 문제가 생겼어요. 잠시 뒤에 다시 해 주세요.';
+}
