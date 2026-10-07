@@ -57,6 +57,15 @@ export async function pickPhotoNative(source) {
   } catch { return null; }
 }
 
+// 이 폰의 알림 허용 상태: 'granted' | 'denied' | 'prompt'(아직 안 물어봄) | 'unsupported'(웹·꺼 둠)
+export async function pushPermission() {
+  if (!isApp || !window.HARU_CONFIG?.push) return 'unsupported';
+  try {
+    const p = await Push.checkPermissions();
+    return p.receive === 'granted' ? 'granted' : p.receive === 'denied' ? 'denied' : 'prompt';
+  } catch { return 'unsupported'; }
+}
+
 // 푸시 알림 등록 → 토큰을 서버에 저장.
 // Firebase(google-services.json) 없이 register()를 부르면 안드로이드 앱이 죽으므로 config.js의 push 스위치로 막는다.
 export async function registerPush(onToken) {
@@ -67,21 +76,33 @@ export async function registerPush(onToken) {
     if (p.receive !== 'granted') p = await Push.requestPermissions();
     if (p.receive !== 'granted') return 'denied';
     // 안드로이드: 전용 채널(중요도 최고 = 소리·진동·화면 위 팝업). 없으면 FCM "기타" 채널로 가서 갤럭시에선 조용히 온다
+    // 잠금 화면: visibility 0(PRIVATE) = 휴대폰 설정이 '민감한 내용 숨기기'면 내용을 가린다 (10/7, 예전 채널은 1=항상 보임)
+    // 안드로이드는 만든 채널 설정을 못 바꿔서 새 이름(anbu2)으로 만들고 예전 채널은 지운다. 서버(hb-push)도 anbu2로 보낸다
     if (platform === 'android') {
       await Push.createChannel({
-        id: 'anbu', name: '안부 알림', description: '부모님 안부 도착, 아직 소식 없음 알림',
-        importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#D45D72',
+        id: 'anbu2', name: '안부 알림', description: '부모님 안부 도착, 아직 소식 없음 알림',
+        importance: 5, visibility: 0, vibration: true, lights: true, lightColor: '#D45D72',
       }).catch(() => {});
       // 밤 10시~아침 8시(이 휴대폰 시간)에 오는 알림 — 소리·진동 없이 알림창에만
       await Push.createChannel({
-        id: 'anbu_quiet', name: '안부 알림 (밤 시간)', description: '밤에는 소리 없이 조용히 와요',
-        importance: 2, visibility: 1, vibration: false,
+        id: 'anbu_quiet2', name: '안부 알림 (밤 시간)', description: '밤에는 소리 없이 조용히 와요',
+        importance: 2, visibility: 0, vibration: false,
       }).catch(() => {});
+      for (const id of ['anbu', 'anbu_quiet']) await Push.deleteChannel({ id }).catch(() => {});
     }
     await Push.addListener('registration', ({ value }) => onToken(value, platform));
     await Push.register();
     return 'requested';
   } catch { return 'unavailable'; }
+}
+
+// 상태 표시줄을 화면 테마와 맞춘다 — 다크 모드에서 위쪽 띠만 밝게 남던 문제 (10/7)
+export function syncStatusBar() {
+  if (!isApp) return;
+  const forced = document.documentElement.dataset.theme;
+  const dark = forced ? forced === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  StatusBar.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => {}); // DARK = 어두운 바탕용 밝은 글씨
+  if (platform === 'android') StatusBar.setBackgroundColor({ color: dark ? '#1B1A18' : '#F3EEE6' }).catch(() => {});
 }
 
 export const exitApp = () => App?.exitApp();
@@ -90,8 +111,8 @@ export const exitApp = () => App?.exitApp();
 export function initNative({ onOpenHash, onBack, onResume }) {
   if (!isApp) return;
   document.documentElement.classList.add('is-app', `is-${platform}`);
-  StatusBar.setStyle({ style: 'LIGHT' }).catch(() => {});
-  if (platform === 'android') StatusBar.setBackgroundColor({ color: '#F3EEE6' }).catch(() => {});
+  syncStatusBar();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncStatusBar);
   // 링크의 #/… 로 이동. 웹의 '앱으로 열기'(intent://)는 해시가 빠질 수 있어 ?h=/p/… 로도 넘긴다
   const open = (url) => {
     try {

@@ -28,6 +28,11 @@ export function rememberFamily(f) {
   LS.set('haru:recent', list.slice(0, 10));
 }
 export const recentFamilies = () => LS.get('haru:recent', []);
+// 지운 가족 방은 이 폰의 '내 가족 방' 목록과 마지막 화면 기억에서도 뺀다
+export function forgetFamily(fid) {
+  LS.set('haru:recent', LS.get('haru:recent', []).filter((x) => x.id !== fid));
+  try { localStorage.removeItem(`haru:me:${fid}`); if ((localStorage.getItem('haru:lastView') || '').includes(fid)) localStorage.removeItem('haru:lastView'); } catch { /* 저장 불가 */ }
+}
 // 이 휴대폰의 시간대 (해외 사는 자녀 → 밤에는 조용한 알림)
 export const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } };
 
@@ -79,6 +84,11 @@ export class Store {
   // 부모님 화면 '안부 알람 받기' — 이 폰(알림 토큰)에만 켜고 끈다
   parentCallOpt(token, pushToken, on) {
     return this.#rpc('hb_parent_call_opt', { p_token: token, p_push: pushToken, p_on: on });
+  }
+  // 가족 방 지우기 — 형제·부모님 모두에게서 사라진다 (hb_011)
+  async deleteFamily(fid, memberId) {
+    await this.#rpc('hb_delete_family', { p_family: fid, p_member: memberId });
+    this.#ping(fid);
   }
   async unlinkParent(fid, memberId) {
     await this.#rpc('hb_unlink_parent', { p_family: fid, p_member: memberId });

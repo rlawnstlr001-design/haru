@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz } from './store.js?v=202610071534';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610071534';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610071602';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610071602';
 import {
-  isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp,
+  isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610071534';
+} from './native.js?v=202610071602';
 
 const $app = document.getElementById('app');
 let store;
@@ -33,8 +33,18 @@ function refreshView({ force = false } = {}) {
   if (refreshing) return refreshing;
   pendingRefresh = false;
   const y = scrollY;
-  refreshing = view().then(() => scrollTo(0, y)).catch(() => {}).finally(() => { refreshing = null; });
+  bgRefresh = !force;
+  refreshing = view().then(() => scrollTo(0, y)).catch(() => {}).finally(() => { refreshing = null; bgRefresh = false; });
   return refreshing;
+}
+// 저절로 새로고침(1분마다·실시간 신호·앱으로 돌아옴)일 때, 받은 내용이 지난번과 같으면 화면을 다시 그리지 않는다 (10/7)
+let bgRefresh = false;
+let lastSig = '';
+function unchanged(key, data) {
+  const sig = key + JSON.stringify(data);
+  const same = bgRefresh && sig === lastSig;
+  lastSig = sig;
+  return same;
 }
 
 // 당겨서 새로고침 (화면 맨 위에서 아래로 끌기)
@@ -177,6 +187,7 @@ const familyLink = (fid) => `${base()}#/f/${fid}`;
 const parentLink = (tok) => `${base()}#/p/${tok}`;
 
 // 한국 시각 기준 "지금 몇 시 몇 분" (마감 판단용)
+const awayFromKorea = () => { const tz = localTz(); return !!tz && tz !== 'Asia/Seoul'; };
 function kstNowMinutes() {
   const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
   const [h, m] = p.split(':').map(Number);
@@ -297,6 +308,7 @@ async function renderFamily(fid) {
   const myId = me.get(fid);
   const mine = f.members.find((m) => m.id === myId);
   if (!mine) return renderJoin(f);
+  if (unchanged(`f:${fid}:${myId}:${kstNowMinutes() > toMinutes(f.deadline)}`, f)) { lastRender = Date.now(); return; }
 
   if (!sessionStorage.getItem(`haru:opened:${fid}`)) { sessionStorage.setItem(`haru:opened:${fid}`, '1'); store.log(fid, 'family_opened'); }
   if (!unsub) unsub = store.subscribe(fid, () => refreshView());
@@ -305,6 +317,7 @@ async function renderFamily(fid) {
   rememberView(`#/f/${fid}`);
 
   const P = f.parentName;
+  const KST = awayFromKorea() ? '(한국 시간)' : ''; // 해외에 사는 자녀: 마감은 한국 시간 기준
   const today = f.checkins.filter((c) => c.day === f.today);
   // 방을 만든 날은 마감 경고를 하지 않는다 (부모님이 링크를 받기도 전이라)
   const createdToday = new Date(f.createdAt).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === f.today;
@@ -349,6 +362,8 @@ async function renderFamily(fid) {
       <button class="btn ghost block" id="invite">👨‍👩‍👧 형제 초대하기</button>
     </section>` : ''}
 
+    <div id="push-card"></div>
+    ${kakaoBarHtml()}
     <section class="today-wrap">
       ${today.length ? today.map((c) => todayCard(c, f, myId)).join('')
         : quiet ? `<article class="polaroid">
@@ -363,10 +378,13 @@ async function renderFamily(fid) {
             <div class="face empty"><span class="e">${late ? '📞' : '🌤'}</span></div>
             <div class="caption">
               <p class="note">${late ? `${esc(josa(P, '이/가'))} 아직 소식이 없어요` : '오늘의 한 장을 기다리는 중이에요'}</p>
-              <p class="muted small">${late ? `마감 ${esc(f.deadline)}이 지났어요. 전화 한 통 어떠세요?` : `마감 ${esc(f.deadline)} · 부탁하면 대부분 금방 보내 주세요`}</p>
+              <p class="muted small">${late ? `마감 ${esc(f.deadline)}${KST}이 지났어요. 전화 한 통 어떠세요?` : `마감 ${esc(f.deadline)}${KST} · 부탁하면 대부분 금방 보내 주세요`}</p>
             </div>
           </article>
-          <button class="btn primary block" id="ask">${f.parentDevices ? `📳 ${esc(P)} 폰으로 안부 부탁하기` : '💌 오늘 안부 부탁하기'}</button>`}
+          <button class="btn primary block" id="ask">${f.parentDevices ? `📳 ${esc(P)} 폰으로 안부 부탁하기` : '💌 오늘 안부 부탁하기'}</button>
+          <p class="muted small parent-state">${f.parentDevices
+            ? `📱 ${esc(P)} 폰에 앱이 연결돼 있어요${f.parentCallDevices ? ' · 안부 알람 켜짐' : ''}`
+            : `📱 ${esc(P)} 폰에 앱이 아직 없어 링크로 부탁해요. <a href="#/f/${esc(fid)}/s">연결 방법</a>`}</p>`}
     </section>
 
     <section class="block talk">
@@ -445,10 +463,40 @@ async function renderFamily(fid) {
     };
   });
   loadPhotos();
-  if (isApp && !sessionStorage.getItem(`haru:push:${fid}`)) {
-    sessionStorage.setItem(`haru:push:${fid}`, '1');
-    registerPush((token, plat) => store.registerPush(fid, myId, token, plat));
+  bindPushCard(fid, myId, P);
+}
+
+// 이 폰(자녀) 알림 — 이미 허용했으면 조용히 등록, 아직 안 물어봤으면 이유부터 설명, 꺼져 있으면 켜는 방법 (10/7)
+async function bindPushCard(fid, myId, P) {
+  if (!isApp) return;
+  const reg = () => registerPush((token, plat) => store.registerPush(fid, myId, token, plat));
+  const perm = await pushPermission();
+  if (perm === 'granted') {
+    if (!sessionStorage.getItem(`haru:push:${fid}`)) { sessionStorage.setItem(`haru:push:${fid}`, '1'); reg(); }
+    return;
   }
+  if (perm === 'unsupported') return;
+  const box = $app.querySelector('#push-card');
+  if (!box) return;
+  box.innerHTML = `<section class="pp-card push-card">
+    <p class="pp-title">${perm === 'denied' ? '🔕 이 폰은 알림이 꺼져 있어요' : '🔔 알림을 켜 주세요'}</p>
+    <p class="pp-desc">${esc(josa(P, '이/가'))} 안부를 보내면 바로, 정한 시각까지 소식이 없으면 알려 드려요.${perm === 'denied'
+      ? ' 휴대폰 <b>설정 → 앱 → 안부한장 → 알림</b>에서 켜 주세요.' : ''}</p>
+    <button class="btn primary block" id="push-on">${perm === 'denied' ? '다시 확인하기' : '알림 켜기'}</button>
+  </section>`;
+  box.querySelector('#push-on').onclick = async () => {
+    const r = await reg();
+    if (r === 'requested') { box.innerHTML = ''; toast('알림을 켰어요 🔔'); return; }
+    toast('알림이 아직 꺼져 있어요. 휴대폰 설정 → 앱 → 안부한장 → 알림을 켜 주세요', 4000);
+  };
+}
+
+// 카톡 안 브라우저로 열린 경우: 홈 화면 추가·사진 올리기가 막힐 수 있어 다른 브라우저로 여는 길을 알려 준다 (10/7)
+const inKakao = () => !isApp && /KAKAOTALK/i.test(navigator.userAgent);
+function kakaoBarHtml() {
+  if (!inKakao()) return '';
+  const url = `kakaotalk://web/openExternal?url=${encodeURIComponent(location.href)}`;
+  return `<p class="kakao-bar">카카오톡 안에서 열렸어요. <a href="${esc(url)}">다른 브라우저로 열기</a>하면 홈 화면에 추가해 매일 바로 열 수 있어요.</p>`;
 }
 
 // 오늘의 한 장: 사진이 있으면 폴라로이드, 없으면 줄 쳐진 편지지에 기분
@@ -588,9 +636,32 @@ async function renderSettings(fid) {
         <p class="muted small">${isApp
           ? `밤 10시~아침 8시(이 휴대폰 시간)에는 소리 없이 조용히 와요.${away ? ` 지금 이 휴대폰은 ${esc(tz)} 시간이에요.` : ''}`
           : '알림은 안부한장 앱에서 받을 수 있어요.'}</p>
+        <p class="muted small" id="my-push"></p>
       </section>
       <button class="btn primary block" style="margin-top:18px">저장</button>
-    </form>`;
+    </form>
+    <section class="group danger-zone">
+      <h2>가족 방 지우기</h2>
+      <p class="muted small">이 가족 방의 안부·사진·이야기가 <b>형제 모두와 ${esc(P)} 화면에서</b> 사라지고 되돌릴 수 없어요. 링크도 더는 열리지 않아요.</p>
+      <button type="button" class="btn block danger" id="del-family">가족 방 지우기</button>
+    </section>`;
+  pushPermission().then((perm) => {
+    const el = $app.querySelector('#my-push');
+    if (!el || perm === 'unsupported') return;
+    el.innerHTML = perm === 'granted' ? '🔔 이 폰은 알림이 켜져 있어요.'
+      : `🔕 이 폰은 알림이 꺼져 있어요. 휴대폰 <b>설정 → 앱 → 안부한장 → 알림</b>에서 켜 주세요.`;
+  });
+  $app.querySelector('#del-family').onclick = async () => {
+    if (!confirm(`'${P}' 가족 방을 지울까요?\n형제 모두와 ${P} 화면에서 안부·사진·이야기가 사라져요.`)) return;
+    if (!confirm('정말 지울까요? 되돌릴 수 없어요.')) return;
+    try {
+      await store.deleteFamily(fid, myId);
+      forgetFamily(fid);
+      if (unsub) { unsub(); unsub = null; }
+      toast('가족 방을 지웠어요');
+      replaceHash('#/');
+    } catch (err) { toast(friendly(err)); }
+  };
 
   const form = $app.querySelector('#settings');
   $app.querySelector('#unlink')?.addEventListener('click', async () => {
@@ -630,6 +701,7 @@ function renderJoin(f) {
       <h1>${esc(f.parentName)}의 하루를<br>같이 볼까요?</h1>
       <p>이름을 고르거나 적어 주세요. 이 폰에 기억해 둘게요.</p>
     </section>
+    <p class="wrong-link">💡 <b>${esc(f.parentName)}이신가요?</b> 이 링크는 자녀들이 같이 보는 링크예요. 안부는 자녀가 따로 보내 드린 <b>'안부 보내기' 링크</b>에서 보내 주세요.</p>
     <div class="letter-card">
       ${f.members.length ? `<div class="chips">${f.members.map((m) => `<button class="chip" data-mid="${esc(m.id)}">${esc(m.name)}</button>`).join('')}</div>` : ''}
       <form class="row" id="join"><input class="input grow" name="n" maxlength="20" placeholder="내 이름" required><button class="btn primary">참여</button></form>
@@ -756,6 +828,7 @@ function undoBar(text, ms, run) {
 async function renderParent(token, justSent = false) {
   const v = await store.parentView(token);
   if (location.hash !== `#/p/${token}`) return;
+  if (!justSent && unchanged(`p:${token}:${ppOn(token)}:${pcallOn(token)}`, v)) { lastRender = Date.now(); return; }
   if (!unsub) {
     unsub = store.subscribe(v.familyId, () => refreshView());
     if (!sessionStorage.getItem(`haru:popened:${token}`)) { sessionStorage.setItem(`haru:popened:${token}`, '1'); store.log(v.familyId, 'parent_opened'); }
@@ -781,6 +854,9 @@ async function renderParent(token, justSent = false) {
 
   $app.innerHTML = `
     <div class="parent">
+      ${me.get(v.familyId) ? `<p class="wrong-link">💡 이 화면은 <b>${esc(josa(v.parentName, '이/가'))}</b> 쓰는 화면이에요. 여기서 누르면 ${esc(josa(v.parentName, '이/가'))} 보낸 안부로 기록돼요.
+        <a href="#/f/${esc(v.familyId)}">내 가족 방으로 가기</a></p>` : ''}
+      ${kakaoBarHtml()}
       <p class="date">${esc(dateLabel(v.today))}</p>
       <h1 class="greet">${esc(v.parentName)},<br>오늘 하루 어떠세요?</h1>
       ${sent ? `<section class="sent-card ${justSent ? 'pop' : ''}">

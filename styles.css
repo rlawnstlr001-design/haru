@@ -399,3 +399,12 @@ a.pp-btn { display: flex; align-items: center; justify-content: center; text-dec
 .err-screen p { margin: 0 0 18px; word-break: keep-all; }
 .err-screen .btn { min-height: 52px; padding: 12px 28px; }
 .err-screen p:last-child { margin: 18px 0 0; }
+/* 10/7 점검: 잘못 연 링크 안내 · 카톡 안 브라우저 · 부모님 폰 상태 · 알림 켜기 · 가족 방 지우기 */
+.wrong-link { margin: 12px 0; padding: 14px 16px; border-radius: 16px; background: var(--amber-soft); font-size: 16px; line-height: 1.55; word-break: keep-all; }
+.wrong-link a { display: inline-block; margin-top: 6px; font-weight: 800; }
+.kakao-bar { margin: 10px 0; padding: 10px 14px; border-radius: 14px; background: var(--sun-soft); font-size: 15px; word-break: keep-all; }
+.kakao-bar a { font-weight: 800; }
+.parent-state { margin: 8px 2px 0; }
+.push-card { margin: 14px 0; }
+.danger-zone { margin-top: 28px; }
+.btn.danger { background: transparent; color: var(--rose); box-shadow: inset 0 0 0 1.5px var(--rose); }
