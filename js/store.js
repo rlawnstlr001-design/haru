@@ -135,6 +135,10 @@ export class Store {
     this.#ping(fid);
     return on;
   }
+  // 사진·이야기 신고 (hb_013) — 자녀는 { fid, memberId }, 부모님은 { token }
+  async report({ fid = '', memberId = '', token = '' }, kind, targetId) {
+    await this.#rpc('hb_report', { p_family: fid, p_member: memberId, p_token: token, p_kind: kind, p_target: targetId, p_reason: '' });
+  }
   async registerPush(fid, memberId, token, platform) {
     try {
       await this.#rpc('hb_register_push', { p_family: fid, p_member: memberId, p_token: token, p_platform: platform, p_tz: localTz() });

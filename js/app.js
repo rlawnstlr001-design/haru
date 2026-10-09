@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091345';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091345';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091614';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091614';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610091345';
+} from './native.js?v=202610091614';
 
 const $app = document.getElementById('app');
 let store;
@@ -308,11 +308,13 @@ async function renderFamily(fid) {
   const myId = me.get(fid);
   const mine = f.members.find((m) => m.id === myId);
   if (!mine) return renderJoin(f);
-  if (unchanged(`f:${fid}:${myId}:${kstNowMinutes() > toMinutes(f.deadline)}`, f)) { lastRender = Date.now(); return; }
+  if (unchanged(`f:${fid}:${myId}:${kstNowMinutes() > toMinutes(f.deadline)}:${hiddenSet().size}`, f)) { lastRender = Date.now(); return; }
 
   if (!sessionStorage.getItem(`haru:opened:${fid}`)) { sessionStorage.setItem(`haru:opened:${fid}`, '1'); store.log(fid, 'family_opened'); }
   if (!unsub) unsub = store.subscribe(fid, () => refreshView());
   view = () => renderFamily(fid);
+  reportCtx = { fid, memberId: myId };
+  hideReported(f.checkins, 'checkin');
   lastRender = Date.now();
   rememberView(`#/f/${fid}`);
 
@@ -335,7 +337,7 @@ async function renderFamily(fid) {
   });
   const past = f.checkins.filter((c) => c.day !== f.today);
   // 가족 이야기: 최근 3일 (오늘·어제·그제)
-  const talk = (f.notes || []).filter((n) => Date.parse(`${f.today}T00:00:00+09:00`) - Date.parse(`${n.day}T00:00:00+09:00`) <= 2 * 86400000);
+  const talk = (f.notes || []).filter((n) => !isHidden('note', n.id) && Date.parse(`${f.today}T00:00:00+09:00`) - Date.parse(`${n.day}T00:00:00+09:00`) <= 2 * 86400000);
   let lastDay = '';
   const talkHtml = talk.map((n) => {
     const head = n.day !== lastDay ? `<p class="talk-day">${dayWord(n.day, f.today)}</p>` : '';
@@ -484,6 +486,7 @@ async function renderFamily(fid) {
       try { await store.deleteNote(fid, myId, b.dataset.del); await renderFamily(fid); } catch (e) { toast(friendly(e)); }
     };
   });
+  bindReports();
   loadPhotos();
   bindPushCard(fid, myId, P);
 }
@@ -540,7 +543,7 @@ function todayCard(c, f, myId) {
   const hearted = c.hearts.includes(myId);
   const who = f.members.filter((m) => c.hearts.includes(m.id)).map((m) => m.name);
   const face = c.photo
-    ? `<img class="photo" data-photo="${esc(c.photo)}" alt="${esc(f.parentName)}께서 보낸 사진">`
+    ? `<img class="photo" data-photo="${esc(c.photo)}" data-ref="checkin:${esc(c.id)}" alt="${esc(f.parentName)}께서 보낸 사진">`
     : `<div class="face">${mood ? `<span class="e">${mood.emoji}</span><span class="l">${mood.label}</span>` : '<span class="e">✉️</span>'}</div>`;
   return `<article class="polaroid">
     ${face}
@@ -565,9 +568,11 @@ function noteBubble(n, f, myId) {
     ${mine ? '' : `<i class="b-av" style="--c:${AVATAR_COLORS[Math.max(i, 0) % AVATAR_COLORS.length]}">${esc([...(who?.name || '?')][0])}</i>`}
     <div class="b-body">
       ${mine ? '' : `<span class="b-name">${esc(who?.name || '가족')}</span>`}
-      ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" alt="${esc(josa(who?.name || '가족', '이/가'))} 보낸 사진">` : ''}
+      ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" data-ref="note:${esc(n.id)}" alt="${esc(josa(who?.name || '가족', '이/가'))} 보낸 사진">` : ''}
       ${n.message ? `<p>${esc(n.message)}</p>` : ''}
-      <span class="b-meta">${timeLabel(n.at)}${n.parentHeart ? ` · <b class="b-heart">💗 ${esc(f.parentName)}</b>` : ''}${mine ? ` · <button type="button" class="b-del" data-del="${esc(n.id)}">지우기</button>` : ''}</span>
+      <span class="b-meta">${timeLabel(n.at)}${n.parentHeart ? ` · <b class="b-heart">💗 ${esc(f.parentName)}</b>` : ''}${mine
+        ? ` · <button type="button" class="b-del" data-del="${esc(n.id)}">지우기</button>`
+        : ` · <button type="button" class="b-del" data-report="note:${esc(n.id)}">신고</button>`}</span>
     </div>
   </div>`;
 }
@@ -577,7 +582,7 @@ function miniCard(c, f, myId) {
   const mood = moodOf(c.mood);
   const hearted = c.hearts.includes(myId);
   return `<figure class="mini">
-    ${c.photo ? `<img class="photo" data-photo="${esc(c.photo)}" alt="${esc(c.day)} 사진">`
+    ${c.photo ? `<img class="photo" data-photo="${esc(c.photo)}" data-ref="checkin:${esc(c.id)}" alt="${esc(c.day)} 사진">`
       : `<div class="mini-face ${esc(c.mood || '')}">${mood ? mood.emoji : '✉️'}</div>`}
     ${c.message ? `<span class="m-note">“${esc(c.message)}”</span>` : ''}
     <figcaption><span>${esc(c.day.slice(5).replace('-', '/'))}${c.photo && mood ? ` ${mood.emoji}` : ''}</span>
@@ -604,16 +609,49 @@ async function loadPhotos() {
     const url = urls[img.dataset.photo];
     if (!url) { img.remove(); continue; }
     img.src = url;
-    img.onclick = () => showPhoto(img.src);
+    img.onclick = () => showPhoto(img.src, img.dataset.ref);
   }
 }
 
-function showPhoto(url) {
+function showPhoto(url, ref) {
   const v = document.createElement('div');
   v.className = 'photo-viewer';
-  v.innerHTML = `<img src="${esc(url)}" alt="사진"><span>눌러서 닫기</span>`;
+  v.innerHTML = `<img src="${esc(url)}" alt="사진"><span>눌러서 닫기</span>${ref ? `<button type="button" class="pv-report" data-report="${esc(ref)}">이 사진 신고</button>` : ''}`;
   v.onclick = () => v.remove();
+  v.querySelector('.pv-report')?.addEventListener('click', (e) => { e.stopPropagation(); v.remove(); reportItem(e.currentTarget.dataset.report); });
   document.body.append(v);
+}
+
+// ───────── 신고 (hb_013) ─────────
+// 가족끼리만 보는 방이라도 불쾌한 사진·글은 신고할 수 있어야 한다(Play 사용자 제작 콘텐츠 정책).
+// 신고하면 이 기기에서는 바로 숨기고, 서버에는 기록만 남겨 운영자가 확인한다
+let reportCtx = null; // 자녀 화면 { fid, memberId } / 부모님 화면 { fid, token }
+const HIDE_KEY = 'haru:hidden';
+function hiddenSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDE_KEY) || '[]')); } catch { return new Set(); }
+}
+const isHidden = (kind, id) => hiddenSet().has(`${kind}:${id}`);
+function hideItem(ref) {
+  try { const s = hiddenSet(); s.add(ref); localStorage.setItem(HIDE_KEY, JSON.stringify([...s].slice(-300))); } catch { /* 저장 못 해도 신고는 간다 */ }
+}
+// 신고한 안부는 사진·한마디만 가린다 (도장·기록은 그대로)
+function hideReported(list, kind) {
+  for (const c of list || []) if (isHidden(kind, c.id)) { c.photo = null; c.message = ''; }
+}
+async function reportItem(ref) {
+  if (!reportCtx || !ref) return;
+  const [kind, id] = ref.split(':');
+  const what = kind === 'note' ? '이야기' : '사진';
+  if (!confirm(`이 ${what}을 신고할까요?\n신고하면 이 폰에서는 바로 숨겨지고, 운영자가 확인해요.`)) return;
+  try {
+    await store.report(reportCtx, kind, id);
+    hideItem(ref);
+    toast(`신고했어요. 이 폰에서는 ${what}을 숨겼어요`);
+    view?.();
+  } catch (e) { toast(friendly(e)); }
+}
+function bindReports() {
+  $app.querySelectorAll('[data-report]').forEach((b) => { b.onclick = () => reportItem(b.dataset.report); });
 }
 
 // ───────── 설정 ─────────
@@ -863,7 +901,7 @@ function undoBar(text, ms, run) {
 async function renderParent(token, justSent = false) {
   const v = await store.parentView(token);
   if (location.hash !== `#/p/${token}`) return;
-  if (!justSent && unchanged(`p:${token}:${ppOn(token)}:${pcallOn(token)}`, v)) { lastRender = Date.now(); return; }
+  if (!justSent && unchanged(`p:${token}:${ppOn(token)}:${pcallOn(token)}:${hiddenSet().size}`, v)) { lastRender = Date.now(); return; }
   if (!unsub) {
     unsub = store.subscribe(v.familyId, () => refreshView());
     if (!sessionStorage.getItem(`haru:popened:${token}`)) { sessionStorage.setItem(`haru:popened:${token}`, '1'); store.log(v.familyId, 'parent_opened'); }
@@ -871,19 +909,21 @@ async function renderParent(token, justSent = false) {
   view = () => renderParent(token);
   lastRender = Date.now();
   rememberView(`#/p/${token}`);
+  reportCtx = { fid: v.familyId, token };
   const kids = joinNames(v.children);
   const sent = v.todayCheckins.length > 0;
   const hearts = [...new Set(v.todayCheckins.flatMap((c) => c.hearts))];
   const photos = v.todayCheckins.filter((c) => c.photo);
-  const notes = [...(v.notes || [])].reverse().slice(0, 8); // 최근 것부터
+  const notes = [...(v.notes || [])].filter((n) => !isHidden('note', n.id)).reverse().slice(0, 8); // 최근 것부터
   // 오늘 아직 안 보내셨으면 기분 버튼이 먼저, 이야기는 아래로 (위에 '와 있어요' 안내)
   const notesHtml = notes.length ? `<section class="kids-talk" id="kids-talk">
           <h2 class="p-h">💌 자녀들이 보낸 이야기</h2>
           ${notes.map((n) => `<article class="kid-note">
             <p class="kn-who"><b>${esc(n.name)}</b> <span>${dayWord(n.day, v.today)} ${timeLabel(n.at)}</span></p>
-            ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" alt="${esc(josa(n.name, '이/가'))} 보낸 사진">` : ''}
+            ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" data-ref="note:${esc(n.id)}" alt="${esc(josa(n.name, '이/가'))} 보낸 사진">` : ''}
             ${n.message ? `<p class="kn-msg">${esc(n.message)}</p>` : ''}
             <button class="heart kn-heart ${n.heart ? 'on' : ''}" data-pheart="${esc(n.id)}" aria-pressed="${n.heart}">${n.heart ? '❤️ 하트 보냈어요' : '🤍 하트 보내기'}</button>
+            <button type="button" class="b-del kn-report" data-report="note:${esc(n.id)}">신고</button>
           </article>`).join('')}
         </section>` : '';
 
@@ -907,6 +947,7 @@ async function renderParent(token, justSent = false) {
       ${v.streak ? `<p class="streak">이번 주 <b>${v.streak}일</b> 소식을 보내셨어요 👏</p>` : ''}
       ${isApp ? parentPushHtml(v, token) : openInAppHtml(token)}
     </div>`;
+  bindReports();
   loadPhotos();
 
   const send = async (data, label) => {
