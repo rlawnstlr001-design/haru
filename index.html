@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>안부한장 — 부모님의 오늘을 형제와 같이 받아보는 한 장</title>
   <meta name="description" content="부모님은 받은 링크에서 버튼 한 번, 사진 한 장으로 오늘 안부를 보내고, 형제들은 같은 방에서 같이 봐요. 정한 시각까지 소식이 없으면 알려 드려요.">
+  <meta name="naver-site-verification" content="efe313e4bf5fd5be6f53186497bfc5fc1dd03ace" />
   <link rel="canonical" href="https://anbuhanjang.com/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://anbuhanjang.com/">
@@ -20,10 +21,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap">
-  <link rel="stylesheet" href="styles.css?v=202610071824">
+  <link rel="stylesheet" href="styles.css?v=202610091146">
   <!-- Supabase 클라이언트(package-lock 버전 고정, UMD → window.supabase). CDN 최신판을 받지 않아 갑자기 깨지거나 해외 약한 망에서 멈추지 않게 -->
-  <script src="js/supabase.js?v=202610071824"></script>
-  <script src="config.js?v=202610071824"></script>
+  <script src="js/supabase.js?v=202610091146"></script>
+  <script src="config.js?v=202610091146"></script>
   <script>
     // 소개 페이지는 웹에서 주소만 열었을 때만(#how 같은 쪽 안 이동 포함). 앱 안이거나 #/… 링크면 바로 앱 화면 (깜빡임 방지)
     if (location.hash.startsWith('#/') || window.Capacitor?.isNativePlatform?.()) document.documentElement.classList.remove('landing');
@@ -164,6 +165,6 @@
 
   <div id="app"><div class="boot">불러오는 중…</div></div>
   <div id="toast" role="status"></div>
-  <script type="module" src="js/app.js?v=202610071824"></script>
+  <script type="module" src="js/app.js?v=202610091146"></script>
 </body>
 </html>
