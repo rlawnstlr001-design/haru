@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091257';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091257';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091345';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091345';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610091257';
+} from './native.js?v=202610091345';
 
 const $app = document.getElementById('app');
 let store;
