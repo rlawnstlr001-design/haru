@@ -19,7 +19,8 @@
       "namespace": "android_app",
       "package_name": "com.sosolab.anbuhanjang",
       "sha256_cert_fingerprints": [
-        "0D:EE:70:50:FC:8C:57:68:48:51:F8:1A:3D:BF:C8:18:4C:2F:D7:21:FD:25:BB:0B:BF:D6:D5:8F:43:92:7A:9F"
+        "0D:EE:70:50:FC:8C:57:68:48:51:F8:1A:3D:BF:C8:18:4C:2F:D7:21:FD:25:BB:0B:BF:D6:D5:8F:43:92:7A:9F",
+        "F0:BB:49:CF:D5:96:AC:94:73:89:CE:F6:2C:9E:93:43:D7:D8:CC:36:A7:18:A4:F8:CA:36:8D:62:FB:A7:49:28"
       ]
     }
   }
