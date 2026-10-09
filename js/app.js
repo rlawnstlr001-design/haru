@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091146';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091146';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091257';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091257';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610091146';
+} from './native.js?v=202610091257';
 
 const $app = document.getElementById('app');
 let store;
@@ -763,7 +763,7 @@ const isAndroidWeb = () => !isApp && /Android/i.test(navigator.userAgent);
 function appIntentUrl(token) {
   const path = `/p/${token}`;
   const fallback = encodeURIComponent('https://anbuhanjang.com/');
-  return `intent://anbuhanjang.com/?h=${encodeURIComponent(path)}#${path}#Intent;scheme=https;package=com.anbuhanjang.app;S.browser_fallback_url=${fallback};end`;
+  return `intent://anbuhanjang.com/?h=${encodeURIComponent(path)}#${path}#Intent;scheme=https;package=com.sosolab.anbuhanjang;S.browser_fallback_url=${fallback};end`;
 }
 function openInAppHtml(token) {
   if (!isAndroidWeb()) return '<p class="tip">💡 매일 쉽게 여시려면: 브라우저 메뉴 → <b>홈 화면에 추가</b></p>';
