@@ -423,3 +423,4 @@ a.pp-btn { display: flex; align-items: center; justify-content: center; text-dec
 .add-hint { margin: 12px 0 0; text-align: center; }
 .partner-sent { margin: 10px 0 0; font-size: 18px; color: var(--muted); }
 .add-parent .chips { margin-bottom: 8px; }
+.pp-widget [hidden] { display: none !important; }

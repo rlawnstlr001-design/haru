@@ -23,6 +23,13 @@ export async function callStatus() {
 }
 export const openCallSettings = () => Call?.openFullScreenSettings().catch(() => {});
 export const testCall = (hash) => Call?.test({ hash, delay: 5 }).catch(() => {});
+// 홈 화면 안부 위젯 (안드로이드): 부모님 화면을 열 때 링크·이름·오늘 보냈는지 저장, 홈 화면에 놓기 요청
+export const widgetSupported = !!Call;
+export const saveWidget = (data) => Call?.saveWidget(data).catch(() => {});
+export async function pinWidget() {
+  if (!Call) return false;
+  try { return (await Call.pinWidget()).ok; } catch { return false; }
+}
 
 // 공유 링크의 바탕 주소 — 앱 안 주소는 localhost라 실제 웹 주소로
 export function siteBase() {

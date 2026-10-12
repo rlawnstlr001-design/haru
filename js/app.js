@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610121053';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610121053';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610121210';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610121210';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
-  callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610121053';
+  callSupported, callStatus, openCallSettings, testCall, widgetSupported, saveWidget, pinWidget,
+} from './native.js?v=202610121210';
 
 const $app = document.getElementById('app');
 let store;
@@ -933,6 +933,32 @@ function parentPushHtml(v, token) {
     <button class="btn primary block pp-btn" id="pp-on">알림 받기</button>
   </section>`;
 }
+// 홈 화면 안부 위젯 (안드로이드) — 이 폰이 부모님 폰일 때만(자녀 폰에서 부모님 화면을 열면 저장하지 않는다)
+function widgetHtml() {
+  return `<section class="pp-card pp-widget" id="pp-widget" hidden>
+    <p class="pp-title">📌 홈 화면에 안부 버튼 놓기</p>
+    <p class="pp-desc">앱을 열지 않아도 홈 화면에서 기분만 누르면 안부가 가요.</p>
+    <button class="btn primary block" id="pp-widget-btn">홈 화면에 놓기</button>
+    <p class="pp-desc small" id="pp-widget-how" hidden>홈 화면 빈 곳을 길게 누르고 <b>'위젯'</b>에서 <b>안부한장</b>을 골라 주세요.</p>
+  </section>`;
+}
+function bindWidget(v, token) {
+  if (!widgetSupported || me.get(v.familyId)) return;
+  const C = window.HARU_CONFIG;
+  saveWidget({ token, name: v.parentName, url: C.supabaseUrl, key: C.supabaseAnonKey, sentToday: v.todayCheckins.length > 0 });
+  const card = $app.querySelector('#pp-widget');
+  if (!card) return;
+  callStatus().then((st) => {
+    if (!st || st.widgets > 0) return; // 이미 놓았으면 안내하지 않는다
+    card.hidden = false;
+    const btn = card.querySelector('#pp-widget-btn');
+    if (!st.pinSupported) { btn.hidden = true; card.querySelector('#pp-widget-how').hidden = false; return; }
+    btn.onclick = async () => {
+      if (await pinWidget()) toast('홈 화면에 놓을지 묻는 창이 떠요. "추가"를 눌러 주세요');
+      else { btn.hidden = true; card.querySelector('#pp-widget-how').hidden = false; }
+    };
+  });
+}
 function bindParentPush(token) {
   if (!isApp) return;
   const reg = () => registerPush(async (t, plat) => {
@@ -1043,6 +1069,7 @@ async function renderParent(token, justSent = false) {
       ${sent ? '' : notesHtml}
       ${v.streak ? `<p class="streak">이번 주 <b>${v.streak}일</b> 소식을 보내셨어요 👏</p>` : ''}
       ${isApp ? parentPushHtml(v, token) : openInAppHtml(token)}
+      ${widgetSupported && !me.get(v.familyId) ? widgetHtml() : ''}
     </div>`;
   bindReports();
   loadPhotos();
@@ -1072,6 +1099,7 @@ async function renderParent(token, justSent = false) {
   });
   bindComposer($app.querySelector('#msg'), { folder: v.familyId, onSend: (d) => send(d, josa(sentLabel(d), '을/를')) });
   bindParentPush(token);
+  bindWidget(v, token);
   $app.querySelector('.kids-jump')?.addEventListener('click', () => document.getElementById('kids-talk')?.scrollIntoView({ behavior: 'smooth' }));
   $app.querySelectorAll('[data-pheart]').forEach((b) => {
     b.onclick = async () => {
