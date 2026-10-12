@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610091615';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610091615';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610120957';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610120957';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610091615';
+} from './native.js?v=202610120957';
 
 const $app = document.getElementById('app');
 let store;
@@ -308,7 +308,8 @@ async function renderFamily(fid) {
   const myId = me.get(fid);
   const mine = f.members.find((m) => m.id === myId);
   if (!mine) return renderJoin(f);
-  if (unchanged(`f:${fid}:${myId}:${kstNowMinutes() > toMinutes(f.deadline)}:${hiddenSet().size}`, f)) { lastRender = Date.now(); return; }
+  const pastDue = f.parents.map((p) => kstNowMinutes() > toMinutes(p.deadline)).join('');
+  if (unchanged(`f:${fid}:${myId}:${pastDue}:${hiddenSet().size}`, f)) { lastRender = Date.now(); return; }
 
   if (!sessionStorage.getItem(`haru:opened:${fid}`)) { sessionStorage.setItem(`haru:opened:${fid}`, '1'); store.log(fid, 'family_opened'); }
   if (!unsub) unsub = store.subscribe(fid, () => refreshView());
@@ -318,23 +319,33 @@ async function renderFamily(fid) {
   lastRender = Date.now();
   rememberView(`#/f/${fid}`);
 
-  const P = f.parentName;
+  const T = familyTitle(f); // "엄마" 또는 "아버지·어머니"
+  const multi = f.parents.length > 1;
+  const canAdd = f.parents.length < (f.maxParents || 1);
   const KST = awayFromKorea() ? '(한국 시간)' : ''; // 해외에 사는 자녀: 마감은 한국 시간 기준
-  const today = f.checkins.filter((c) => c.day === f.today);
-  // 방을 만든 날은 마감 경고를 하지 않는다 (부모님이 링크를 받기도 전이라)
-  const createdToday = new Date(f.createdAt).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === f.today;
-  const late = !today.length && !createdToday && kstNowMinutes() > toMinutes(f.deadline);
-  // 최근 7일 소식이 없으면(서버도 '늦음' 알림을 멈춘다) 걱정 대신 링크를 다시 보내 보자는 안내
   const weekAgo = new Date(`${f.today}T12:00:00Z`); weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
-  const quiet = f.checkins.length > 0 && !f.checkins.some((c) => c.day >= weekAgo.toISOString().slice(0, 10));
-  const fresh = !f.checkins.length; // 부모님이 처음 안부를 보내실 때까지 '처음 할 일' 안내를 남긴다
   // 날짜 계산은 정오(UTC) 기준 — 폰이 미국·베트남 시간이어도 요일이 밀리지 않게
-  const days = Array.from({ length: 7 }, (_, i) => {
+  const dayList = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(`${f.today}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() - (6 - i));
-    const iso = d.toISOString().slice(0, 10);
-    return { iso, label: '일월화수목금토'[d.getUTCDay()], ok: f.checkins.some((c) => c.day === iso), isToday: iso === f.today };
+    return { iso: d.toISOString().slice(0, 10), label: '일월화수목금토'[d.getUTCDay()] };
   });
+  // 부모님별 오늘 상태 (두 분이면 분마다 마감·알림이 따로다 — hb_014)
+  const slices = f.parents.map((p) => {
+    const mineC = f.checkins.filter((c) => c.parentId === p.id);
+    const today = mineC.filter((c) => c.day === f.today);
+    // 방(또는 그분)을 추가한 날은 마감 경고를 하지 않는다 (링크를 받기도 전이라)
+    const addedToday = new Date(p.createdAt).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }) === f.today;
+    return {
+      p, today,
+      late: !today.length && !addedToday && kstNowMinutes() > toMinutes(p.deadline),
+      // 최근 7일 소식이 없으면(서버도 '늦음' 알림을 멈춘다) 걱정 대신 링크를 다시 보내 보자는 안내
+      quiet: mineC.length > 0 && !mineC.some((c) => c.day >= weekAgo.toISOString().slice(0, 10)),
+      fresh: !mineC.length, // 처음 안부를 보내실 때까지 '처음 할 일' 안내를 남긴다
+      days: dayList.map((d) => ({ ...d, ok: mineC.some((c) => c.day === d.iso), isToday: d.iso === f.today })),
+    };
+  });
+  const freshOnes = slices.filter((s) => s.fresh);
   const past = f.checkins.filter((c) => c.day !== f.today);
   // 가족 이야기: 최근 3일 (오늘·어제·그제)
   const talk = (f.notes || []).filter((n) => !isHidden('note', n.id) && Date.parse(`${f.today}T00:00:00+09:00`) - Date.parse(`${n.day}T00:00:00+09:00`) <= 2 * 86400000);
@@ -345,6 +356,34 @@ async function renderFamily(fid) {
     return head + noteBubble(n, f, myId);
   }).join('');
 
+  const todayHtml = (s) => {
+    const { p, today, late, quiet } = s;
+    const P = p.name;
+    const head = multi ? `<h3 class="p-sub">${esc(P)}</h3>` : '';
+    if (today.length) return head + today.map((c) => todayCard(c, f, myId)).join('');
+    if (quiet) return `${head}<article class="polaroid">
+        <div class="face empty"><span class="e">💌</span></div>
+        <div class="caption">
+          <p class="note">${multi ? `${esc(P)} 소식이 최근 7일 동안 없었어요` : '최근 7일 동안 소식이 없었어요'}</p>
+          <p class="muted small">링크를 잃어버리셨을 수도 있어요. ${esc(P)}께 링크를 다시 보내 드려 볼까요? 그동안 '아직 소식 없음' 알림은 쉬어요</p>
+        </div>
+      </article>
+      <button class="btn block" data-send="${esc(p.id)}">💌 ${esc(P)}께 링크 다시 보내기</button>`;
+    return `${head}<article class="polaroid ${late ? 'late' : ''}">
+        <div class="face empty"><span class="e">${late ? '📞' : '🌤'}</span></div>
+        <div class="caption">
+          <p class="note">${late ? `${esc(josa(P, '이/가'))} 아직 소식이 없어요` : `${multi ? `${esc(P)}의 ` : ''}오늘의 한 장을 기다리는 중이에요`}</p>
+          <p class="muted small">${late ? `마감 ${esc(p.deadline)}${KST}이 지났어요. 전화 한 통 어떠세요?` : `마감 ${esc(p.deadline)}${KST} · 부탁하면 대부분 금방 보내 주세요`}</p>
+        </div>
+      </article>
+      <button class="btn primary block" data-ask="${esc(p.id)}">${p.devices ? `📳 ${esc(P)} 폰으로 안부 부탁하기` : `💌 ${multi ? `${esc(P)}께 ` : ''}오늘 안부 부탁하기`}</button>
+      ${callClaimHtml(f, myId, late, p)}
+      <p class="muted small parent-state">${p.devices
+        ? `📱 ${esc(P)} 폰에 앱이 연결돼 있어요${p.callDevices ? ' · 안부 알람 켜짐' : ''}`
+        : `📱 ${esc(P)} 폰에 앱이 아직 없어 링크로 부탁해요. <a href="#/f/${esc(fid)}/s">연결 방법</a>`}</p>`;
+  };
+  const stampsHtml = (s) => `<div class="stamps">${s.days.map((d) => `<div class="stamp ${d.ok ? 'ok' : ''} ${d.isToday ? 'today' : ''}"><i>${d.ok ? '✓' : ''}</i><span>${d.label}</span></div>`).join('')}</div>`;
+
   $app.innerHTML = `
     <header class="mast">
       <a class="icon-btn" href="#/" aria-label="처음으로">←</a>
@@ -353,52 +392,33 @@ async function renderFamily(fid) {
     </header>
     <section class="day-head">
       <p class="date">${esc(dateLabel(f.today))}</p>
-      <h1>${esc(P)}의 오늘</h1>
+      <h1>${esc(T)}의 오늘</h1>
     </section>
 
-    ${fresh ? `<section class="letter-card setup">
+    ${freshOnes.length ? `<section class="letter-card setup">
       <p class="kicker">처음 할 일</p>
-      <h2>${esc(P)}께 안부 링크를 보내 주세요</h2>
-      <p>${esc(josa(P, '이/가'))} 링크를 누르시면 버튼 한 번, 사진 한 장으로 바로 안부를 보내실 수 있어요.</p>
-      <button class="btn primary block" id="send-parent">💌 ${esc(P)}께 링크 보내기</button>
+      <h2>${esc(joinNames(freshOnes.map((s) => s.p.name)))}께 안부 링크를 보내 주세요</h2>
+      <p>${multi ? '분마다 링크가 따로예요. ' : ''}링크를 누르시면 버튼 한 번, 사진 한 장으로 바로 안부를 보내실 수 있어요.</p>
+      ${freshOnes.map((s) => `<button class="btn primary block" data-send="${esc(s.p.id)}">💌 ${esc(s.p.name)}께 링크 보내기</button>`).join('')}
       <button class="btn ghost block" id="invite">👨‍👩‍👧 형제 초대하기</button>
+      ${canAdd && !multi ? `<p class="muted small add-hint">두 분이 따로 사시나요? <a href="#/f/${esc(fid)}/s">부모님 한 분 더 모시기</a></p>` : ''}
     </section>` : ''}
 
     <div id="push-card"></div>
     ${kakaoBarHtml()}
-    <section class="today-wrap">
-      ${today.length ? today.map((c) => todayCard(c, f, myId)).join('')
-        : quiet ? `<article class="polaroid">
-            <div class="face empty"><span class="e">💌</span></div>
-            <div class="caption">
-              <p class="note">최근 7일 동안 소식이 없었어요</p>
-              <p class="muted small">링크를 잃어버리셨을 수도 있어요. ${esc(P)}께 링크를 다시 보내 드려 볼까요? 그동안 '아직 소식 없음' 알림은 쉬어요</p>
-            </div>
-          </article>
-          <button class="btn block" id="send-parent3">💌 ${esc(P)}께 링크 다시 보내기</button>`
-        : `<article class="polaroid ${late ? 'late' : ''}">
-            <div class="face empty"><span class="e">${late ? '📞' : '🌤'}</span></div>
-            <div class="caption">
-              <p class="note">${late ? `${esc(josa(P, '이/가'))} 아직 소식이 없어요` : '오늘의 한 장을 기다리는 중이에요'}</p>
-              <p class="muted small">${late ? `마감 ${esc(f.deadline)}${KST}이 지났어요. 전화 한 통 어떠세요?` : `마감 ${esc(f.deadline)}${KST} · 부탁하면 대부분 금방 보내 주세요`}</p>
-            </div>
-          </article>
-          <button class="btn primary block" id="ask">${f.parentDevices ? `📳 ${esc(P)} 폰으로 안부 부탁하기` : '💌 오늘 안부 부탁하기'}</button>
-          ${callClaimHtml(f, myId, late)}
-          <p class="muted small parent-state">${f.parentDevices
-            ? `📱 ${esc(P)} 폰에 앱이 연결돼 있어요${f.parentCallDevices ? ' · 안부 알람 켜짐' : ''}`
-            : `📱 ${esc(P)} 폰에 앱이 아직 없어 링크로 부탁해요. <a href="#/f/${esc(fid)}/s">연결 방법</a>`}</p>`}
+    <section class="today-wrap ${multi ? 'multi' : ''}">
+      ${slices.map(todayHtml).join('')}
     </section>
 
     <section class="block talk">
-      <h2>가족 이야기<span>${esc(P)}도 같이 봐요</span></h2>
-      ${talkHtml || `<p class="muted small talk-empty">${esc(P)}께 오늘 이야기를 남겨 보세요. 사진도 같이 보낼 수 있어요.</p>`}
-      ${composerHtml({ id: 'note', placeholder: `${P}께 한마디 (형제들도 같이 봐요)`, maxlength: 200 })}
+      <h2>가족 이야기<span>${multi ? '두 분도' : `${esc(T)}도`} 같이 봐요</span></h2>
+      ${talkHtml || `<p class="muted small talk-empty">${esc(T)}께 오늘 이야기를 남겨 보세요. 사진도 같이 보낼 수 있어요.</p>`}
+      ${composerHtml({ id: 'note', placeholder: `${T}께 한마디 (형제들도 같이 봐요)`, maxlength: 200 })}
     </section>
 
     <section class="block">
-      <h2>이번 주<span>7일 중 ${days.filter((d) => d.ok).length}일 소식</span></h2>
-      <div class="stamps">${days.map((d) => `<div class="stamp ${d.ok ? 'ok' : ''} ${d.isToday ? 'today' : ''}"><i>${d.ok ? '✓' : ''}</i><span>${d.label}</span></div>`).join('')}</div>
+      <h2>이번 주<span>${multi ? slices.map((s) => `${s.p.name} ${s.days.filter((d) => d.ok).length}일`).join(' · ') : `7일 중 ${slices[0].days.filter((d) => d.ok).length}일 소식`}</span></h2>
+      ${multi ? slices.map((s) => `<p class="stamp-who">${esc(s.p.name)}</p>${stampsHtml(s)}`).join('') : stampsHtml(slices[0])}
       <button class="pill week-share" id="week-share">📤 이번 주 소식 형제들과 공유</button>
     </section>
 
@@ -409,62 +429,66 @@ async function renderFamily(fid) {
       <div class="avatars">${f.members.map((m, i) => `<div class="avatar"><i style="--c:${AVATAR_COLORS[i % AVATAR_COLORS.length]}">${esc([...m.name][0] || '?')}</i><span>${esc(m.name)}${m.id === myId ? ' (나)' : ''}</span></div>`).join('')}</div>
       <div class="pill-row">
         <button class="pill" id="invite2">👨‍👩‍👧 형제 초대</button>
-        <button class="pill" id="send-parent2">💌 ${esc(P)} 링크 다시 보내기</button>
+        ${f.parents.map((p) => `<button class="pill" data-send="${esc(p.id)}">💌 ${esc(p.name)} 링크 다시 보내기</button>`).join('')}
+        ${canAdd ? `<a class="pill" href="#/f/${esc(fid)}/s">➕ 부모님 한 분 더</a>` : ''}
       </div>
     </section>
     <p class="foot">안부한장 · <a href="privacy.html">개인정보처리방침</a></p>`;
 
-  const sendParent = () => {
+  const parentOf = (pid) => f.parents.find((p) => p.id === pid) || f.parents[0];
+  const sendParent = (p) => {
     store.log(fid, 'parent_link_shared');
     sessionStorage.removeItem(`haru:fresh:${fid}`);
-    share({ text: `${P}! 이제 매일 이 링크로 안부 보내 주세요 💛\n버튼 한 번이면 돼요. 사진도 보낼 수 있어요.`, url: parentLink(f.parentToken) },
+    share({ text: `${p.name}! 이제 매일 이 링크로 안부 보내 주세요 💛\n버튼 한 번이면 돼요. 사진도 보낼 수 있어요.`, url: parentLink(p.token) },
       '링크를 복사했어요. 카톡에 붙여 넣으세요');
   };
   const invite = () => {
     store.log(fid, 'invite_shared');
-    share({ text: `${P}의 하루를 같이 봐요 💛 (안부한장)`, url: familyLink(fid) }, '초대 링크를 복사했어요');
+    share({ text: `${T}의 하루를 같이 봐요 💛 (안부한장)`, url: familyLink(fid) }, '초대 링크를 복사했어요');
   };
-  $app.querySelector('#send-parent')?.addEventListener('click', sendParent);
-  $app.querySelector('#send-parent2')?.addEventListener('click', sendParent);
-  $app.querySelector('#send-parent3')?.addEventListener('click', sendParent);
+  $app.querySelectorAll('[data-send]').forEach((b) => { b.onclick = () => sendParent(parentOf(b.dataset.send)); });
   $app.querySelector('#invite')?.addEventListener('click', invite);
   $app.querySelector('#invite2')?.addEventListener('click', invite);
   // 이번 주 요약을 형제 단톡방에 (가족 방 링크와 함께 — 아직 안 들어온 형제도 들어오게)
   $app.querySelector('#week-share')?.addEventListener('click', () => {
-    const weekStart = days[0].iso;
-    const okDays = days.filter((d) => d.ok).length;
-    const photos = f.checkins.filter((c) => c.day >= weekStart && c.photo).length;
+    const weekStart = dayList[0].iso;
+    const lines = slices.map((s) => {
+      const photos = f.checkins.filter((c) => c.parentId === s.p.id && c.day >= weekStart && c.photo).length;
+      const stamps = s.days.map((d) => `${d.label}${d.ok ? '✓' : '·'}`).join(' ');
+      return `${multi ? `${s.p.name}: ` : ''}7일 중 ${s.days.filter((d) => d.ok).length}일 안부 · 사진 ${photos}장\n${stamps}`;
+    });
     const talks = (f.notes || []).filter((n) => n.day >= weekStart).length;
-    const stamps = days.map((d) => `${d.label}${d.ok ? '✓' : '·'}`).join(' ');
     store.log(fid, 'week_shared');
-    share({ text: `📮 ${P}의 이번 주\n7일 중 ${okDays}일 안부 · 사진 ${photos}장 · 가족 이야기 ${talks}개\n${stamps}\n(안부한장)`, url: familyLink(fid) },
+    share({ text: `📮 ${T}의 이번 주\n${lines.join('\n')}\n가족 이야기 ${talks}개\n(안부한장)`, url: familyLink(fid) },
       '이번 주 요약을 복사했어요. 형제 단톡방에 붙여 넣으세요');
   });
-  // 내가 전화드릴게요 — 형제 화면에 보여서 전화가 겹치거나 비지 않게
-  const callBtn = async (on) => {
-    try { f.callToday = await store.callClaim(fid, myId, on); haptic(80); toast(on ? '형제들에게 "전화드릴게요"를 알렸어요' : '취소했어요'); await renderFamily(fid); }
+  // 내가 전화드릴게요 — 형제 화면에 보여서 전화가 겹치거나 비지 않게 (부모님별)
+  const callBtn = async (pid, on) => {
+    try { await store.callClaim(fid, myId, on, pid); haptic(80); toast(on ? '형제들에게 "전화드릴게요"를 알렸어요' : '취소했어요'); await renderFamily(fid); }
     catch (err) { toast(friendly(err)); }
   };
-  $app.querySelector('#call-me')?.addEventListener('click', () => callBtn(true));
-  $app.querySelector('#call-cancel')?.addEventListener('click', () => callBtn(false));
+  $app.querySelectorAll('[data-call-me]').forEach((b) => { b.onclick = () => callBtn(b.dataset.callMe, true); });
+  $app.querySelectorAll('[data-call-cancel]').forEach((b) => { b.onclick = () => callBtn(b.dataset.callCancel, false); });
   // 부모님 안부를 7번 이상 받았으면 별점 요청 (한 기기 한 번)
   if (isApp && f.checkins.length >= 7) setTimeout(() => askReview('haru:review'), 1500);
-  // 부모님 폰이 연결돼 있으면 알림으로 바로, 아니면(또는 실패하면) 지금처럼 링크 공유
-  $app.querySelector('#ask')?.addEventListener('click', async (e) => {
-    const shareAsk = () => {
-      store.log(fid, 'ask_shared');
-      share({ text: `${P}, 오늘 하루 어떠세요? 😊\n버튼 한 번만 눌러 주세요 💛`, url: parentLink(f.parentToken) }, '부탁 메시지를 복사했어요');
+  // 그분 폰이 연결돼 있으면 알림으로 바로, 아니면(또는 실패하면) 링크 공유
+  $app.querySelectorAll('[data-ask]').forEach((btn) => {
+    btn.onclick = async () => {
+      const p = parentOf(btn.dataset.ask);
+      const shareAsk = () => {
+        store.log(fid, 'ask_shared');
+        share({ text: `${p.name}, 오늘 하루 어떠세요? 😊\n버튼 한 번만 눌러 주세요 💛`, url: parentLink(p.token) }, '부탁 메시지를 복사했어요');
+      };
+      if (!p.devices) return shareAsk();
+      btn.disabled = true;
+      try {
+        const r = await store.askParent(fid, myId, p.id);
+        if (!r.pushed) return shareAsk();
+        haptic(120);
+        toast(r.recent ? `방금 ${josa(p.name, '을/를')} 불렀어요. 조금만 기다려 주세요` : `${p.name} 폰으로 알림을 보냈어요`);
+      } catch { shareAsk(); }
+      finally { btn.disabled = false; }
     };
-    if (!f.parentDevices) return shareAsk();
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    try {
-      const r = await store.askParent(fid, myId);
-      if (!r.pushed) return shareAsk();
-      haptic(120);
-      toast(r.recent ? `방금 ${josa(P, '을/를')} 불렀어요. 조금만 기다려 주세요` : `${P} 폰으로 알림을 보냈어요`);
-    } catch { shareAsk(); }
-    finally { btn.disabled = false; }
   });
   $app.querySelector('a[aria-label="설정"]').addEventListener('click', () => sessionStorage.setItem('haru:settingsFrom', fid));
   bindHearts(f, myId);
@@ -488,19 +512,22 @@ async function renderFamily(fid) {
   });
   bindReports();
   loadPhotos();
-  bindPushCard(fid, myId, P);
+  bindPushCard(fid, myId, T);
 }
 
-// 오늘 소식이 아직일 때: 누가 전화드리기로 했는지, 아니면(마감이 지났으면) '내가 전화드릴게요' 버튼
-function callClaimHtml(f, myId, late) {
-  const c = f.callToday;
+// 화면 제목용 부모님 호칭: 한 분이면 "엄마", 두 분이면 "아버지·어머니"
+const familyTitle = (f) => (f.parents?.length ? f.parents.map((p) => p.name).join('·') : f.parentName);
+
+// 오늘 소식이 아직일 때: 누가 전화드리기로 했는지, 아니면(마감이 지났으면) '내가 전화드릴게요' 버튼 (부모님별)
+function callClaimHtml(f, myId, late, p) {
+  const c = (f.calls || []).find((x) => x.parentId === p.id);
   if (c) {
     const mine = c.memberId === myId;
-    return `<p class="call-claim">📞 <b>${esc(mine ? '내가' : josa(c.name, '이/가'))}</b> ${esc(f.parentName)}께 전화드리기로 했어요 <span class="muted small">${esc(timeLabel(c.at))}</span>
-      ${mine ? '<button type="button" class="b-del" id="call-cancel">취소</button>' : ''}</p>`;
+    return `<p class="call-claim">📞 <b>${esc(mine ? '내가' : josa(c.name, '이/가'))}</b> ${esc(p.name)}께 전화드리기로 했어요 <span class="muted small">${esc(timeLabel(c.at))}</span>
+      ${mine ? `<button type="button" class="b-del" data-call-cancel="${esc(p.id)}">취소</button>` : ''}</p>`;
   }
   if (!late) return '';
-  return `<button class="btn ghost block" id="call-me">📞 내가 전화드릴게요</button>
+  return `<button class="btn ghost block" data-call-me="${esc(p.id)}">📞 내가 ${f.parents.length > 1 ? `${esc(p.name)}께 ` : ''}전화드릴게요</button>
     <p class="muted small call-hint">형제들 화면에 보여서 전화가 겹치거나 아무도 안 하는 일이 줄어요</p>`;
 }
 
@@ -540,10 +567,11 @@ function kakaoBarHtml() {
 // 오늘의 한 장: 사진이 있으면 폴라로이드, 없으면 줄 쳐진 편지지에 기분
 function todayCard(c, f, myId) {
   const mood = moodOf(c.mood);
+  const pn = parentNameOf(f, c.parentId);
   const hearted = c.hearts.includes(myId);
   const who = f.members.filter((m) => c.hearts.includes(m.id)).map((m) => m.name);
   const face = c.photo
-    ? `<img class="photo" data-photo="${esc(c.photo)}" data-ref="checkin:${esc(c.id)}" alt="${esc(f.parentName)}께서 보낸 사진">`
+    ? `<img class="photo" data-photo="${esc(c.photo)}" data-ref="checkin:${esc(c.id)}" alt="${esc(pn)}께서 보낸 사진">`
     : `<div class="face">${mood ? `<span class="e">${mood.emoji}</span><span class="l">${mood.label}</span>` : '<span class="e">✉️</span>'}</div>`;
   return `<article class="polaroid">
     ${face}
@@ -559,6 +587,13 @@ function todayCard(c, f, myId) {
   </article>`;
 }
 
+const parentNameOf = (f, pid) => (f.parents.find((p) => p.id === pid) || f.parents[0])?.name || '';
+// 가족 이야기에 하트를 누른 부모님 (두 분이면 누가 눌렀는지, 옛 서버면 parentHeart만)
+function noteHeartNames(n, f) {
+  if (Array.isArray(n.parentHearts) && n.parentHearts.length) return n.parentHearts.map((id) => parentNameOf(f, id)).filter(Boolean).join('·');
+  return n.parentHeart ? familyTitle(f) : '';
+}
+
 // 가족 이야기 한 줄: 내 것은 오른쪽, 다른 형제는 왼쪽(이름·색)
 function noteBubble(n, f, myId) {
   const i = f.members.findIndex((m) => m.id === n.memberId);
@@ -570,7 +605,7 @@ function noteBubble(n, f, myId) {
       ${mine ? '' : `<span class="b-name">${esc(who?.name || '가족')}</span>`}
       ${n.photo ? `<img class="photo" data-photo="${esc(n.photo)}" data-ref="note:${esc(n.id)}" alt="${esc(josa(who?.name || '가족', '이/가'))} 보낸 사진">` : ''}
       ${n.message ? `<p>${esc(n.message)}</p>` : ''}
-      <span class="b-meta">${timeLabel(n.at)}${n.parentHeart ? ` · <b class="b-heart">💗 ${esc(f.parentName)}</b>` : ''}${mine
+      <span class="b-meta">${timeLabel(n.at)}${noteHeartNames(n, f) ? ` · <b class="b-heart">💗 ${esc(noteHeartNames(n, f))}</b>` : ''}${mine
         ? ` · <button type="button" class="b-del" data-del="${esc(n.id)}">지우기</button>`
         : ` · <button type="button" class="b-del" data-report="note:${esc(n.id)}">신고</button>`}</span>
     </div>
@@ -580,12 +615,13 @@ function noteBubble(n, f, myId) {
 // 지난 소식: 작은 폴라로이드
 function miniCard(c, f, myId) {
   const mood = moodOf(c.mood);
+  const who = f.parents.length > 1 ? `${parentNameOf(f, c.parentId)} ` : ''; // 두 분이면 누구 안부인지
   const hearted = c.hearts.includes(myId);
   return `<figure class="mini">
     ${c.photo ? `<img class="photo" data-photo="${esc(c.photo)}" data-ref="checkin:${esc(c.id)}" alt="${esc(c.day)} 사진">`
       : `<div class="mini-face ${esc(c.mood || '')}">${mood ? mood.emoji : '✉️'}</div>`}
     ${c.message ? `<span class="m-note">“${esc(c.message)}”</span>` : ''}
-    <figcaption><span>${esc(c.day.slice(5).replace('-', '/'))}${c.photo && mood ? ` ${mood.emoji}` : ''}</span>
+    <figcaption><span>${esc(who)}${esc(c.day.slice(5).replace('-', '/'))}${c.photo && mood ? ` ${mood.emoji}` : ''}</span>
       <button class="heart sm ${hearted ? 'on' : ''}" data-heart="${esc(c.id)}" aria-pressed="${hearted}" aria-label="하트">❤️ ${c.hearts.length || ''}</button></figcaption>
   </figure>`;
 }
@@ -661,8 +697,36 @@ async function renderSettings(fid) {
   const mine = f.members.find((m) => m.id === myId);
   if (!mine) { replaceHash(`#/f/${fid}`); return; }
   const tz = localTz();
-  const P = f.parentName;
+  const T = familyTitle(f);
+  const multi = f.parents.length > 1;
+  const canAdd = f.parents.length < (f.maxParents || 1);
   const away = tz && tz !== 'Asia/Seoul';
+  // 부모님마다 한 묶음 (두 분이면 마감·알림이 분마다 따로 — hb_014)
+  const parentGroup = (p, i) => {
+    const P = p.name;
+    return `<section class="group" data-pg="${esc(p.id)}">
+      <h2>${multi ? `${esc(P)}` : '부모님'}</h2>
+      <label class="field"><span>부모님 호칭</span>
+        <input class="input" name="pname${i}" maxlength="20" value="${esc(P)}" required></label>
+      <label class="field"><span>이 시각까지 소식이 없으면 알려 드려요 (한국 시간)</span>
+        <select class="input" name="pdeadline${i}">${deadlineOptions(p.deadline)}</select></label>
+      <div style="margin-top:4px">
+        <label class="toggle"><span><b>${esc(P)} 폰 매일 안부 알림</b><small>정한 시각에 ${esc(P)} 폰으로 "오늘 하루 어떠세요?" 알림이 가요. 그날 이미 안부를 보내셨으면 가지 않아요</small></span>
+          <input type="checkbox" name="premindOn${i}" ${p.remindOn !== false ? 'checked' : ''}></label>
+      </div>
+      <label class="field"><span>알림 시각 (한국 시간)</span>
+        <select class="input" name="premindAt${i}">${deadlineOptions(p.remindAt || '09:00')}</select></label>
+      <div style="margin-top:8px">
+        <label class="toggle"><span><b>⏰ 안 보내시면 안부 알람</b><small>매일 알림 30분 뒤에도 안부가 없으면 ${esc(P)} 폰에서 알람이 울려요. 30분 뒤 한 번 더, 하루 최대 2번, 밤 10시~아침 8시엔 쉬어요 (안드로이드).
+          ${p.callDevices ? `✅ ${esc(P)} 폰에서 알람을 켜 두셨어요` : `${esc(P)} 폰 화면에서 <b>'안부 알람 받기'</b>를 직접 켜셔야 울려요`}</small></span>
+          <input type="checkbox" name="pcallOn${i}" ${p.callOn !== false ? 'checked' : ''}></label>
+      </div>
+      <p class="muted small">${p.devices
+        ? `✅ ${esc(P)} 폰 ${p.devices}대에 연결돼 있어요. '오늘 안부 부탁하기'도 링크 대신 알림으로 가요. <button type="button" class="b-del" data-unlink="${esc(p.id)}">연결 끊기</button>`
+        : `아직 연결된 ${esc(P)} 폰이 없어요. ${esc(P)} 폰에 안부한장 앱을 설치하고 ${multi ? `${esc(P)} ` : '부모님 '}링크를 연 뒤, 화면 아래 <b>'매일 알림 받기'</b>를 눌러 주세요.`}</p>
+      ${multi ? `<p class="muted small"><button type="button" class="b-del" data-remove="${esc(p.id)}">${esc(P)} 빼기</button> — ${esc(P)}의 안부 기록도 같이 지워져요</p>` : ''}
+    </section>`;
+  };
   $app.innerHTML = `
     <header class="mast">
       <a class="icon-btn" href="#/f/${esc(fid)}" aria-label="돌아가기">←</a>
@@ -671,37 +735,14 @@ async function renderSettings(fid) {
     </header>
     <h1 class="page-title">설정</h1>
     <form id="settings">
-      <section class="group">
-        <h2>가족 방</h2>
-        <label class="field"><span>부모님 호칭</span>
-          <input class="input" name="parentName" maxlength="20" value="${esc(f.parentName)}" required></label>
-        <label class="field"><span>이 시각까지 소식이 없으면 알려 드려요 (한국 시간)</span>
-          <select class="input" name="deadline">${deadlineOptions(f.deadline)}</select></label>
-        <p class="muted small">가족 방 설정은 형제 모두에게 똑같이 바뀌어요.</p>
-      </section>
-      <section class="group">
-        <h2>${esc(P)} 폰 알림</h2>
-        <div style="margin-top:4px">
-          <label class="toggle"><span><b>매일 안부 알림</b><small>정한 시각에 ${esc(P)} 폰으로 "오늘 하루 어떠세요?" 알림이 가요. 그날 이미 안부를 보내셨으면 가지 않아요</small></span>
-            <input type="checkbox" name="remindOn" ${f.remindOn !== false ? 'checked' : ''}></label>
-        </div>
-        <label class="field"><span>알림 시각 (한국 시간)</span>
-          <select class="input" name="remindAt">${deadlineOptions(f.remindAt || '09:00')}</select></label>
-        <div style="margin-top:8px">
-          <label class="toggle"><span><b>⏰ 안 보내시면 안부 알람</b><small>매일 알림 30분 뒤에도 안부가 없으면 ${esc(P)} 폰에서 알람이 울려요. 30분 뒤 한 번 더, 하루 최대 2번, 밤 10시~아침 8시엔 쉬어요 (안드로이드).
-            ${f.parentCallDevices ? `✅ ${esc(P)} 폰에서 알람을 켜 두셨어요` : `${esc(P)} 폰 화면에서 <b>'안부 알람 받기'</b>를 직접 켜셔야 울려요`}</small></span>
-            <input type="checkbox" name="callOn" ${f.callOn !== false ? 'checked' : ''}></label>
-        </div>
-        <p class="muted small" id="parent-dev">${f.parentDevices
-          ? `✅ ${esc(P)} 폰 ${f.parentDevices}대에 연결돼 있어요. '오늘 안부 부탁하기'도 링크 대신 알림으로 가요. <button type="button" class="b-del" id="unlink">연결 끊기</button>`
-          : `아직 연결된 ${esc(P)} 폰이 없어요. ${esc(P)} 폰에 안부한장 앱을 설치하고 부모님 링크를 연 뒤, 화면 아래 <b>'매일 알림 받기'</b>를 눌러 주세요.`}</p>
-      </section>
+      ${f.parents.map(parentGroup).join('')}
+      <p class="muted small">부모님 설정은 형제 모두에게 똑같이 바뀌어요.</p>
       <section class="group">
         <h2>나</h2>
         <label class="field"><span>내 이름</span>
           <input class="input" name="myName" maxlength="20" value="${esc(mine.name)}" required></label>
         <div style="margin-top:12px">
-          <label class="toggle"><span><b>안부 도착 알림</b><small>${esc(josa(f.parentName, '이/가'))} 안부를 보내면 바로 알려 드려요</small></span>
+          <label class="toggle"><span><b>안부 도착 알림</b><small>${esc(josa(T, '이/가'))} 안부를 보내면 바로 알려 드려요</small></span>
             <input type="checkbox" name="notifyCheckin" ${mine.notifyCheckin !== false ? 'checked' : ''}></label>
           <label class="toggle"><span><b>'아직 소식 없음' 알림</b><small>마감이 지나도 소식이 없으면 알려 드려요. 1시간이 더 지나면 다른 형제에게도 가요</small></span>
             <input type="checkbox" name="notifyLate" ${mine.notifyLate !== false ? 'checked' : ''}></label>
@@ -713,9 +754,19 @@ async function renderSettings(fid) {
       </section>
       <button class="btn primary block" style="margin-top:18px">저장</button>
     </form>
+    ${canAdd ? `<form class="group add-parent" id="add-parent">
+      <h2>부모님 한 분 더 모시기</h2>
+      <p class="muted small">따로 사시는 부모님도 한 가족 방에서 같이 봐요. 분마다 링크·마감 시각·알림이 따로예요. 가족 이야기는 두 분이 같이 보세요.</p>
+      <div class="field"><span>호칭</span>
+        <div class="chips">${['엄마', '아빠', '어머니', '아버지'].filter((n) => !f.parents.some((p) => p.name === n)).map((n) => `<button type="button" class="chip" data-apn="${n}">${n}</button>`).join('')}</div>
+        <input class="input" name="name" maxlength="20" placeholder="직접 입력 (예: 여수 아버지)" required></div>
+      <label class="field"><span>이 시각까지 소식이 없으면 알려 드려요 (한국 시간)</span>
+        <select class="input" name="deadline">${deadlineOptions(f.parents[0]?.deadline || '12:00')}</select></label>
+      <button class="btn block">➕ 모시기</button>
+    </form>` : ''}
     <section class="group danger-zone">
       <h2>가족 방 지우기</h2>
-      <p class="muted small">이 가족 방의 안부·사진·이야기가 <b>형제 모두와 ${esc(P)} 화면에서</b> 사라지고 되돌릴 수 없어요. 링크도 더는 열리지 않아요.</p>
+      <p class="muted small">이 가족 방의 안부·사진·이야기가 <b>형제 모두와 ${esc(T)} 화면에서</b> 사라지고 되돌릴 수 없어요. 링크도 더는 열리지 않아요.</p>
       <button type="button" class="btn block danger" id="del-family">가족 방 지우기</button>
     </section>`;
   pushPermission().then((perm) => {
@@ -725,7 +776,7 @@ async function renderSettings(fid) {
       : `🔕 이 폰은 알림이 꺼져 있어요. 휴대폰 <b>설정 → 앱 → 안부한장 → 알림</b>에서 켜 주세요.`;
   });
   $app.querySelector('#del-family').onclick = async () => {
-    if (!confirm(`'${P}' 가족 방을 지울까요?\n형제 모두와 ${P} 화면에서 안부·사진·이야기가 사라져요.`)) return;
+    if (!confirm(`'${T}' 가족 방을 지울까요?\n형제 모두와 ${T} 화면에서 안부·사진·이야기가 사라져요.`)) return;
     if (!confirm('정말 지울까요? 되돌릴 수 없어요.')) return;
     try {
       await store.deleteFamily(fid, myId);
@@ -735,25 +786,53 @@ async function renderSettings(fid) {
       replaceHash('#/');
     } catch (err) { toast(friendly(err)); }
   };
+  const parentOf = (pid) => f.parents.find((p) => p.id === pid);
+  $app.querySelectorAll('[data-unlink]').forEach((b) => {
+    b.onclick = async () => {
+      const P = parentOf(b.dataset.unlink).name;
+      if (!confirm(`${P} 폰 연결을 끊을까요? 다시 연결하려면 ${P} 폰에서 '매일 알림 받기'를 눌러 주세요.`)) return;
+      try { await store.unlinkParent(fid, myId, b.dataset.unlink); toast('연결을 끊었어요'); await renderSettings(fid); } catch (err) { toast(friendly(err)); }
+    };
+  });
+  $app.querySelectorAll('[data-remove]').forEach((b) => {
+    b.onclick = async () => {
+      const P = parentOf(b.dataset.remove).name;
+      if (!confirm(`${josa(P, '을/를')} 가족 방에서 뺄까요?\n${P}의 안부·사진 기록이 지워지고 ${P} 링크도 더는 열리지 않아요.`)) return;
+      try { await store.removeParent(fid, myId, b.dataset.remove); toast(`${josa(P, '을/를')} 뺐어요`); await renderSettings(fid); } catch (err) { toast(friendly(err)); }
+    };
+  });
+  const add = $app.querySelector('#add-parent');
+  if (add) {
+    add.querySelectorAll('[data-apn]').forEach((b) => {
+      b.onclick = () => { add.name.value = b.dataset.apn; add.querySelectorAll('[data-apn]').forEach((x) => x.setAttribute('aria-pressed', x === b)); };
+    });
+    add.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = add.querySelector('button.btn');
+      btn.disabled = true;
+      try {
+        const r = await store.addParent(fid, myId, { name: add.name.value.trim(), deadline: add.deadline.value });
+        toast(`${josa(r.name, '을/를')} 모셨어요. ${r.name}께 링크를 보내 주세요`);
+        replaceHash(`#/f/${fid}`); // 가족 화면 '처음 할 일'에 링크 보내기 버튼이 나온다
+      } catch (err) { toast(friendly(err)); btn.disabled = false; }
+    };
+  }
 
   const form = $app.querySelector('#settings');
-  $app.querySelector('#unlink')?.addEventListener('click', async () => {
-    if (!confirm(`${P} 폰 연결을 끊을까요? 다시 연결하려면 ${P} 폰에서 '매일 알림 받기'를 눌러 주세요.`)) return;
-    try { await store.unlinkParent(fid, myId); toast('연결을 끊었어요'); await renderSettings(fid); } catch (err) { toast(friendly(err)); }
-  });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const btn = form.querySelector('button.primary');
     btn.disabled = true;
     try {
-      const parentName = form.parentName.value.trim();
-      const deadline = form.deadline.value;
-      const remindAt = form.remindAt.value;
-      const remindOn = form.remindOn.checked;
-      const callOn = form.callOn.checked;
-      if (parentName !== f.parentName || deadline !== f.deadline || remindAt !== f.remindAt || remindOn !== f.remindOn
-        || callOn !== f.callOn) {
-        await store.updateFamily(fid, { parentName, deadline, remindAt, remindOn, callOn });
+      for (const [i, p] of f.parents.entries()) {
+        const next = {
+          name: form[`pname${i}`].value.trim(), deadline: form[`pdeadline${i}`].value, remindAt: form[`premindAt${i}`].value,
+          remindOn: form[`premindOn${i}`].checked, callOn: form[`pcallOn${i}`].checked,
+        };
+        if (next.name !== p.name || next.deadline !== p.deadline || next.remindAt !== p.remindAt
+          || next.remindOn !== p.remindOn || next.callOn !== p.callOn) {
+          await store.updateParent(fid, myId, p.id, next);
+        }
       }
       await store.updateMember(fid, myId, {
         name: form.myName.value.trim(), notifyCheckin: form.notifyCheckin.checked, notifyLate: form.notifyLate.checked,
@@ -771,10 +850,10 @@ function renderJoin(f) {
   $app.innerHTML = `
     <header class="home-top"><span class="wordmark">안부한장</span></header>
     <section class="cover">
-      <h1>${esc(f.parentName)}의 하루를<br>같이 볼까요?</h1>
+      <h1>${esc(familyTitle(f))}의 하루를<br>같이 볼까요?</h1>
       <p>이름을 고르거나 적어 주세요. 이 폰에 기억해 둘게요.</p>
     </section>
-    <p class="wrong-link">💡 <b>${esc(f.parentName)}이신가요?</b> 이 링크는 자녀들이 같이 보는 링크예요. 안부는 자녀가 따로 보내 드린 <b>'안부 보내기' 링크</b>에서 보내 주세요.</p>
+    <p class="wrong-link">💡 <b>${esc(familyTitle(f))}이신가요?</b> 이 링크는 자녀들이 같이 보는 링크예요. 안부는 자녀가 따로 보내 드린 <b>'안부 보내기' 링크</b>에서 보내 주세요.</p>
     <div class="letter-card">
       ${f.members.length ? `<div class="chips">${f.members.map((m) => `<button class="chip" data-mid="${esc(m.id)}">${esc(m.name)}</button>`).join('')}</div>` : ''}
       <form class="row" id="join"><input class="input grow" name="n" maxlength="20" placeholder="내 이름" required><button class="btn primary">참여</button></form>
@@ -897,6 +976,11 @@ function undoBar(text, ms, run) {
 }
 
 // ───────── 부모님 화면 ─────────
+// 두 분이 한 가족 방이면: 같이 계신 분이 오늘 안부를 보내셨는지 한 줄 (hb_014)
+function partnerHtml(v) {
+  const sent = (v.partners || []).filter((x) => x.sentToday).map((x) => x.name);
+  return sent.length ? `<p class="partner-sent">💛 ${esc(joinNames(sent))}도 오늘 안부를 보내셨어요</p>` : '';
+}
 // 위에서부터: 오늘 보낸 것·받은 하트 → 자녀들이 보낸 이야기(하트로 답) → 기분 버튼(한 번에 보냄) → 사진·한마디 같이 보내기
 async function renderParent(token, justSent = false) {
   const v = await store.parentView(token);
@@ -934,6 +1018,7 @@ async function renderParent(token, justSent = false) {
       ${kakaoBarHtml()}
       <p class="date">${esc(dateLabel(v.today))}</p>
       <h1 class="greet">${esc(v.parentName)},<br>오늘 하루 어떠세요?</h1>
+      ${partnerHtml(v)}
       ${sent ? `<section class="sent-card ${justSent ? 'pop' : ''}">
           ${photos.length ? `<div class="sent-photos">${photos.map((c) => `<img class="photo" data-photo="${esc(c.photo)}" alt="보낸 사진">`).join('')}</div>` : ''}
           <p class="sent-title">💛 ${esc(kids)}에게 전했어요</p>

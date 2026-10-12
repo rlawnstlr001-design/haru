@@ -24,7 +24,8 @@ export const me = {
 };
 export function rememberFamily(f) {
   const list = LS.get('haru:recent', []).filter((x) => x.id !== f.id);
-  list.unshift({ id: f.id, parentName: f.parentName, at: Date.now() });
+  const parentName = f.parents?.length ? f.parents.map((p) => p.name).join('·') : f.parentName;
+  list.unshift({ id: f.id, parentName, at: Date.now() });
   LS.set('haru:recent', list.slice(0, 10));
 }
 export const recentFamilies = () => LS.get('haru:recent', []);
@@ -55,15 +56,23 @@ export class Store {
     return this.#rpc('hb_create_family', { p_parent_name: parentName, p_child_name: childName, p_deadline: deadline, p_device: deviceId() });
   }
   async getFamily(fid) {
-    // 오늘 '내가 전화드릴게요'를 맡은 형제도 같이 (hb_012 이전 서버면 없음)
-    const [f, call] = await Promise.all([
-      this.#rpc('hb_get_family', { p_family: fid }),
-      this.#rpc('hb_call_today', { p_family: fid }).catch(() => null),
-    ]);
+    const f = await this.#rpc('hb_get_family', { p_family: fid });
     if (!f) throw new Error('가족 방을 찾을 수 없어요');
-    f.callToday = call;
+    if (!f.parents) await this.#legacyFamily(fid, f);
     rememberFamily(f);
     return f;
+  }
+  // hb_014(부모님 두 분) 이전 서버: 부모님 한 분짜리 모양으로 맞춘다
+  async #legacyFamily(fid, f) {
+    const pid = 'p0';
+    f.parents = [{
+      id: pid, name: f.parentName, token: f.parentToken, createdAt: f.createdAt, deadline: f.deadline,
+      remindOn: f.remindOn, remindAt: f.remindAt, callOn: f.callOn, devices: f.parentDevices, callDevices: f.parentCallDevices,
+    }];
+    f.maxParents = 1;
+    for (const c of f.checkins) c.parentId = pid;
+    const call = await this.#rpc('hb_call_today', { p_family: fid }).catch(() => null);
+    f.calls = call ? [{ ...call, parentId: pid }] : [];
   }
   async join(fid, name) {
     const m = await this.#rpc('hb_join', { p_family: fid, p_name: name, p_device: deviceId() });
@@ -78,9 +87,28 @@ export class Store {
     });
     this.#ping(fid);
   }
-  // 부모님 폰 알림: 자녀가 '안부 부탁' → { pushed } (false면 부모님 폰이 아직 연결 안 됨 → 링크 공유)
-  askParent(fid, memberId) {
-    return this.#rpc('hb_ask_parent', { p_family: fid, p_member: memberId });
+  // 부모님 한 분 더 / 분마다 설정 / 빼기 (hb_014)
+  async addParent(fid, memberId, { name, deadline }) {
+    const r = await this.#rpc('hb_add_parent', { p_family: fid, p_member: memberId, p_name: name, p_deadline: deadline });
+    this.#ping(fid);
+    return r;
+  }
+  async updateParent(fid, memberId, parentId, { name, deadline, remindAt = null, remindOn = null, callOn = null }) {
+    if (parentId === 'p0') return this.updateFamily(fid, { parentName: name, deadline, remindAt, remindOn, callOn }); // 옛 서버
+    await this.#rpc('hb_update_parent', {
+      p_family: fid, p_member: memberId, p_parent: parentId, p_name: name || '', p_deadline: deadline || '',
+      p_remind_at: remindAt, p_remind_on: remindOn, p_call_on: callOn,
+    });
+    this.#ping(fid);
+  }
+  async removeParent(fid, memberId, parentId) {
+    await this.#rpc('hb_remove_parent', { p_family: fid, p_member: memberId, p_parent: parentId });
+    this.#ping(fid);
+  }
+  // 부모님 폰 알림: 자녀가 '안부 부탁' → { pushed } (false면 그분 폰이 아직 연결 안 됨 → 링크 공유)
+  askParent(fid, memberId, parentId = null) {
+    return this.#rpc('hb_ask_parent', parentId && parentId !== 'p0'
+      ? { p_family: fid, p_member: memberId, p_parent: parentId } : { p_family: fid, p_member: memberId });
   }
   // 부모님 화면(앱)에서 '매일 알림 받기'
   registerParentPush(token, pushToken, platform) {
@@ -96,13 +124,15 @@ export class Store {
     this.#ping(fid);
   }
   // 오늘 전화를 맡기/취소 → 오늘 맡은 사람(없으면 null)
-  async callClaim(fid, memberId, on) {
-    const r = await this.#rpc('hb_call_claim', { p_family: fid, p_member: memberId, p_on: on });
+  async callClaim(fid, memberId, on, parentId = null) {
+    const r = await this.#rpc('hb_call_claim', parentId && parentId !== 'p0'
+      ? { p_family: fid, p_member: memberId, p_on: on, p_parent: parentId } : { p_family: fid, p_member: memberId, p_on: on });
     this.#ping(fid);
     return r;
   }
-  async unlinkParent(fid, memberId) {
-    await this.#rpc('hb_unlink_parent', { p_family: fid, p_member: memberId });
+  async unlinkParent(fid, memberId, parentId = null) {
+    await this.#rpc('hb_unlink_parent', parentId && parentId !== 'p0'
+      ? { p_family: fid, p_member: memberId, p_parent: parentId } : { p_family: fid, p_member: memberId });
     this.#ping(fid);
   }
   async parentView(token) {

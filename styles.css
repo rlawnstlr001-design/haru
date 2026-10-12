@@ -415,3 +415,11 @@ a.pp-btn { display: flex; align-items: center; justify-content: center; text-dec
 .call-claim .b-del { margin-left: 6px; }
 .call-hint { margin: 6px 2px 0; }
 .week-share { margin-top: 12px; }
+
+/* ── 부모님 두 분 (hb_014) ── */
+.today-wrap.multi .p-sub { margin: 18px 0 8px; font-size: 17px; font-weight: 800; color: var(--ink); }
+.today-wrap.multi .p-sub:first-child { margin-top: 0; }
+.stamp-who { margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: var(--muted); }
+.add-hint { margin: 12px 0 0; text-align: center; }
+.partner-sent { margin: 10px 0 0; font-size: 18px; color: var(--muted); }
+.add-parent .chips { margin-bottom: 8px; }
