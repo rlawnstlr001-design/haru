@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610121210';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610121210';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610121242';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610121242';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall, widgetSupported, saveWidget, pinWidget,
-} from './native.js?v=202610121210';
+} from './native.js?v=202610121242';
 
 const $app = document.getElementById('app');
 let store;
@@ -716,6 +716,10 @@ async function renderSettings(fid) {
       </div>
       <label class="field"><span>알림 시각 (한국 시간)</span>
         <select class="input" name="premindAt${i}">${deadlineOptions(p.remindAt || '09:00')}</select></label>
+      <div class="field bday-field" data-bday="${esc(p.id)}" style="display:none"><span>생신 (양력)</span>
+        <div class="row"><select class="input" name="pbm${i}" aria-label="${esc(P)} 생신 달"><option value="">달</option>${Array.from({ length: 12 }, (_, k) => `<option value="${String(k + 1).padStart(2, '0')}">${k + 1}월</option>`).join('')}</select>
+          <select class="input" name="pbd${i}" aria-label="${esc(P)} 생신 날"><option value="">날</option>${Array.from({ length: 31 }, (_, k) => `<option value="${String(k + 1).padStart(2, '0')}">${k + 1}일</option>`).join('')}</select></div>
+        <small class="muted">3일 전과 당일에 형제 모두에게 알려 드려요. 음력 생신이면 올해 양력 날짜로 적어 주세요(해마다 바뀌어요).</small></div>
       <div style="margin-top:8px">
         <label class="toggle"><span><b>⏰ 안 보내시면 안부 알람</b><small>매일 알림 30분 뒤에도 안부가 없으면 ${esc(P)} 폰에서 알람이 울려요. 30분 뒤 한 번 더, 하루 최대 2번, 밤 10시~아침 8시엔 쉬어요 (안드로이드).
           ${p.callDevices ? `✅ ${esc(P)} 폰에서 알람을 켜 두셨어요` : `${esc(P)} 폰 화면에서 <b>'안부 알람 받기'</b>를 직접 켜셔야 울려요`}</small></span>
@@ -771,6 +775,19 @@ async function renderSettings(fid) {
       <p class="muted small">이 가족 방의 안부·사진·이야기가 <b>형제 모두와 ${esc(T)} 화면에서</b> 사라지고 되돌릴 수 없어요. 링크도 더는 열리지 않아요.</p>
       <button type="button" class="btn block danger" id="del-family">가족 방 지우기</button>
     </section>`;
+  let bdays = null; // {parentId: 'MM-DD'} (null = 옛 서버라 칸을 숨김)
+  store.getBirthdays(fid, myId).then((v) => {
+    if (!v || typeof v !== 'object') return;
+    bdays = v;
+    f.parents.forEach((p, i) => {
+      const box = $app.querySelector(`[data-bday="${p.id}"]`);
+      if (!box) return;
+      box.style.display = '';
+      const [m, d] = (v[p.id] || '-').split('-');
+      $app.querySelector(`[name=pbm${i}]`).value = m || '';
+      $app.querySelector(`[name=pbd${i}]`).value = d || '';
+    });
+  });
   let weekly = null; // 서버 값 (null = 옛 서버라 칸을 숨김)
   store.getWeekly(fid, myId).then((v) => {
     if (typeof v !== 'boolean') return;
@@ -833,6 +850,9 @@ async function renderSettings(fid) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const btn = form.querySelector('button.primary');
+    // 생신은 달·날 둘 다 고르거나 둘 다 비우기 — 저장을 시작하기 전에 확인
+    const half = bdays && f.parents.find((p, i) => !form[`pbm${i}`].value !== !form[`pbd${i}`].value);
+    if (half) return toast(`${half.name} 생신은 달과 날을 같이 골라 주세요`);
     btn.disabled = true;
     try {
       for (const [i, p] of f.parents.entries()) {
@@ -849,6 +869,13 @@ async function renderSettings(fid) {
         name: form.myName.value.trim(), notifyCheckin: form.notifyCheckin.checked, notifyLate: form.notifyLate.checked,
       });
       if (weekly !== null && form.notifyWeekly.checked !== weekly) await store.setWeekly(fid, myId, form.notifyWeekly.checked);
+      if (bdays) {
+        for (const [i, p] of f.parents.entries()) {
+          const m = form[`pbm${i}`].value, d = form[`pbd${i}`].value;
+          const next = m && d ? `${m}-${d}` : '';
+          if (next !== (bdays[p.id] || '')) await store.setBirthday(fid, myId, p.id, next);
+        }
+      }
       toast('저장했어요');
       // 가족 화면의 ⚙로 들어왔으면 뒤로(기록이 쌓이지 않게), 링크로 바로 왔으면 가족 화면으로
       if (sessionStorage.getItem('haru:settingsFrom') === fid) history.back();

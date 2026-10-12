@@ -188,6 +188,13 @@ export class Store {
   async setWeekly(fid, memberId, on) {
     await this.#rpc('hb_set_weekly', { p_family: fid, p_member: memberId, p_on: !!on });
   }
+  // 부모님 생신 (hb_016) — {parentId: 'MM-DD'}. 옛 서버면 null → 화면에서 숨긴다
+  async getBirthdays(fid, memberId) {
+    try { return await this.#rpc('hb_get_birthdays', { p_family: fid, p_member: memberId }); } catch { return null; }
+  }
+  async setBirthday(fid, memberId, parentId, mmdd) {
+    await this.#rpc('hb_set_birthday', { p_family: fid, p_member: memberId, p_parent: parentId, p_birthday: mmdd || '' });
+  }
   async log(fid, type) {
     try { await this.#rpc('hb_log_event', { p_family: fid, p_type: type, p_device: deviceId() }); } catch { /* 지표 실패는 무시 */ }
   }
