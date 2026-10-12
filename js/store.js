@@ -181,6 +181,13 @@ export class Store {
     });
     this.#ping(fid);
   }
+  // 일요일 저녁 주간 안부 알림 켜기/끄기 (hb_015). 옛 서버면 null → 화면에서 숨긴다
+  async getWeekly(fid, memberId) {
+    try { return await this.#rpc('hb_get_weekly', { p_family: fid, p_member: memberId }); } catch { return null; }
+  }
+  async setWeekly(fid, memberId, on) {
+    await this.#rpc('hb_set_weekly', { p_family: fid, p_member: memberId, p_on: !!on });
+  }
   async log(fid, type) {
     try { await this.#rpc('hb_log_event', { p_family: fid, p_type: type, p_device: deviceId() }); } catch { /* 지표 실패는 무시 */ }
   }

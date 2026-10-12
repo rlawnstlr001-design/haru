@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610120957';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610120957';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610121053';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610121053';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall,
-} from './native.js?v=202610120957';
+} from './native.js?v=202610121053';
 
 const $app = document.getElementById('app');
 let store;
@@ -746,6 +746,8 @@ async function renderSettings(fid) {
             <input type="checkbox" name="notifyCheckin" ${mine.notifyCheckin !== false ? 'checked' : ''}></label>
           <label class="toggle"><span><b>'아직 소식 없음' 알림</b><small>마감이 지나도 소식이 없으면 알려 드려요. 1시간이 더 지나면 다른 형제에게도 가요</small></span>
             <input type="checkbox" name="notifyLate" ${mine.notifyLate !== false ? 'checked' : ''}></label>
+          <label class="toggle" id="weekly-row" style="display:none"><span><b>주간 안부 알림</b><small>일요일 저녁 7시쯤 이번 주 ${esc(T)} 안부가 며칠 왔는지 한 번에 알려 드려요</small></span>
+            <input type="checkbox" name="notifyWeekly" checked></label>
         </div>
         <p class="muted small">${isApp
           ? `밤 10시~아침 8시(이 휴대폰 시간)에는 소리 없이 조용히 와요.${away ? ` 지금 이 휴대폰은 ${esc(tz)} 시간이에요.` : ''}`
@@ -769,6 +771,15 @@ async function renderSettings(fid) {
       <p class="muted small">이 가족 방의 안부·사진·이야기가 <b>형제 모두와 ${esc(T)} 화면에서</b> 사라지고 되돌릴 수 없어요. 링크도 더는 열리지 않아요.</p>
       <button type="button" class="btn block danger" id="del-family">가족 방 지우기</button>
     </section>`;
+  let weekly = null; // 서버 값 (null = 옛 서버라 칸을 숨김)
+  store.getWeekly(fid, myId).then((v) => {
+    if (typeof v !== 'boolean') return;
+    weekly = v;
+    const row = $app.querySelector('#weekly-row');
+    if (!row) return;
+    row.style.display = '';
+    row.querySelector('input').checked = v;
+  });
   pushPermission().then((perm) => {
     const el = $app.querySelector('#my-push');
     if (!el || perm === 'unsupported') return;
@@ -837,6 +848,7 @@ async function renderSettings(fid) {
       await store.updateMember(fid, myId, {
         name: form.myName.value.trim(), notifyCheckin: form.notifyCheckin.checked, notifyLate: form.notifyLate.checked,
       });
+      if (weekly !== null && form.notifyWeekly.checked !== weekly) await store.setWeekly(fid, myId, form.notifyWeekly.checked);
       toast('저장했어요');
       // 가족 화면의 ⚙로 들어왔으면 뒤로(기록이 쌓이지 않게), 링크로 바로 왔으면 가족 화면으로
       if (sessionStorage.getItem('haru:settingsFrom') === fid) history.back();
