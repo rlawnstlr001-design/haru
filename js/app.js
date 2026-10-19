@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610121242';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610121242';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610191642';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610191642';
 import {
-  isApp, siteBase, nativeShare, haptic, pickPhotoNative, registerPush, initNative, exitApp, pushPermission, askReview,
+  isApp, siteBase, nativeShare, haptic, pickPhotoNative, restoredPhoto, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall, widgetSupported, saveWidget, pinWidget,
-} from './native.js?v=202610121242';
+} from './native.js?v=202610191642';
 
 const $app = document.getElementById('app');
 let store;
@@ -141,7 +141,9 @@ function bindComposer(form, { folder, onSend }) {
   form.m.addEventListener('input', () => { d.text = form.m.value; });
   form.querySelectorAll('[data-src]').forEach((b) => {
     b.onclick = async () => {
+      if (b.dataset.src !== 'any') savePhotoDraft(key, form.id, d.text); // 카메라를 띄운 사이 앱이 꺼져도 다시 열 수 있게
       const raw = b.dataset.src === 'any' ? await pickPhoto() : await pickPhotoNative(b.dataset.src);
+      clearPhotoDraft();
       if (!raw) return;
       try { d.blob = await compressImage(raw); } catch { return toast('사진을 열지 못했어요'); }
       show();
@@ -164,6 +166,27 @@ function bindComposer(form, { folder, onSend }) {
     drafts.delete(key); // 보내고 나서 다시 그리는 화면은 빈 칸으로
     if (!(await onSend({ message, photo }))) { drafts.set(key, saved); btn.disabled = false; }
   };
+}
+// 사진을 고르는 사이 앱이 꺼졌을 때 (10/19): 쓰던 한마디와 화면을 이 폰에 적어 두고, 다시 켜지면 찍은 사진과 함께 그 화면으로
+const PHOTO_DRAFT_KEY = 'haru:photodraft';
+function savePhotoDraft(key, formId, text) {
+  if (!isApp) return;
+  try { localStorage.setItem(PHOTO_DRAFT_KEY, JSON.stringify({ at: Date.now(), key, hash: location.hash, formId, text })); } catch { /* 무시 */ }
+}
+function clearPhotoDraft() { try { localStorage.removeItem(PHOTO_DRAFT_KEY); } catch { /* 무시 */ } }
+// 시작할 때: 되살릴 게 있으면 drafts에 넣고 그 화면 주소를 돌려준다(없으면 null)
+async function resumePhotoDraft() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(PHOTO_DRAFT_KEY) || 'null'); } catch { /* 무시 */ }
+  if (!d) return null;
+  clearPhotoDraft();
+  if (!(Date.now() - d.at < 30 * 60e3) || !d.hash?.startsWith('#/')) return null;
+  const raw = await restoredPhoto();
+  let blob = null;
+  if (raw) try { blob = await compressImage(raw); } catch { /* 사진만 못 살림 */ }
+  drafts.set(d.key, { text: d.text || '', blob });
+  setTimeout(() => toast(blob ? '앱이 잠깐 꺼졌다 켜졌어요. 찍은 사진을 넣어 뒀어요' : '앱이 잠깐 꺼졌다 켜졌어요. 사진을 다시 골라 주세요', 5000), 800);
+  return d.hash;
 }
 const sentLabel = ({ message, photo }) => (photo && message ? '사진과 한마디' : photo ? '사진' : '한마디');
 // "오늘" / "어제" / "10/2"
@@ -1141,8 +1164,9 @@ async function renderParent(token, justSent = false) {
 (async () => {
   store = await createStore(window.HARU_CONFIG);
   window.__haru = { store };
-  // 앱을 아이콘으로 켰으면(해시 없음) 마지막으로 본 화면부터
-  const startAt = isApp && (!location.hash || location.hash === '#/') ? lastView() : null;
+  // 사진을 찍는 사이 앱이 꺼졌으면 그 화면부터, 아이콘으로 켰으면(해시 없음) 마지막으로 본 화면부터
+  const resumeAt = isApp ? await resumePhotoDraft() : null;
+  const startAt = resumeAt || (isApp && (!location.hash || location.hash === '#/') ? lastView() : null);
   history.replaceState({ d: 0 }, '', startAt ? `#${startAt.slice(1)}` : undefined);
   addEventListener('hashchange', onHashChange);
   initNative({

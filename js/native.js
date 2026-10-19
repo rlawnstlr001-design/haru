@@ -52,16 +52,30 @@ export function haptic(ms = 200) {
 }
 
 // 사진: 앱은 카메라/앨범을 고르는 작은 창, 웹은 파일 선택창
+// 10/19: 카메라 앱이 떠 있는 사이 안드로이드가 메모리를 확보하려고 우리 앱을 끄는 일이 있다(트립N빵에서 '앱이 종료'로 보고됨, 오류 기록 없음).
+// 새 API(takePhoto·chooseFromGallery)는 다시 켜진 뒤 결과를 버리므로, appRestoredResult로 돌려주는 getPhoto를 쓴다 → restoredPhoto()
+const photoBlob = async (r) => (r?.webPath ? (await fetch(r.webPath)).blob() : null);
 export async function pickPhotoNative(source) {
   if (!isApp) return null;
   try {
-    const opts = { quality: 75, targetWidth: 1600, targetHeight: 1600, correctOrientation: true };
-    const r = source === 'camera'
-      ? await Camera.takePhoto(opts)
-      : (await Camera.chooseFromGallery({ ...opts, mediaType: 0, limit: 1 })).results?.[0];
-    if (!r?.webPath) return null;
-    return await (await fetch(r.webPath)).blob();
+    return await photoBlob(await Camera.getPhoto({
+      source: source === 'camera' ? 'CAMERA' : 'PHOTOS', resultType: 'uri',
+      quality: 75, width: 1600, height: 1600, correctOrientation: true, saveToGallery: false,
+    }));
   } catch { return null; }
+}
+// 앱이 꺼졌다 다시 켜졌을 때, 꺼지기 전에 찍은 사진(없으면 null). App 플러그인이 듣는 쪽이 생길 때까지 붙잡아 둔다
+export function restoredPhoto(ms = 1500) {
+  if (!isApp) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let handle = null;
+    const done = (v) => { clearTimeout(timer); handle?.remove?.(); resolve(v); };
+    const timer = setTimeout(() => done(null), ms);
+    Promise.resolve(App.addListener('appRestoredResult', async (r) => {
+      if (r?.pluginId !== 'Camera' || !r.success) return done(null);
+      try { done(await photoBlob(r.data)); } catch { done(null); }
+    })).then((h) => { handle = h; });
+  });
 }
 
 // 이 폰의 알림 허용 상태: 'granted' | 'denied' | 'prompt'(아직 안 물어봄) | 'unsupported'(웹·꺼 둠)
