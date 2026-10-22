@@ -198,6 +198,13 @@ export class Store {
   async log(fid, type) {
     try { await this.#rpc('hb_log_event', { p_family: fid, p_type: type, p_device: deviceId() }); } catch { /* 지표 실패는 무시 */ }
   }
+  // 유입 경로 (hb_017): 소개 페이지 방문, 방을 만든 직후 그 방이 어디서 왔는지. 옛 서버면 조용히 실패
+  async logVisit(meta) {
+    try { await this.#rpc('hb_log_visit', { p_device: deviceId(), p_meta: meta }); } catch { /* 무시 */ }
+  }
+  async logSource(fid, meta) {
+    try { await this.#rpc('hb_log_source', { p_family: fid, p_device: deviceId(), p_meta: meta }); } catch { /* 무시 */ }
+  }
 
   async uploadPhoto(fid, blob) {
     const path = `${fid}/${uid(14)}.jpg`;

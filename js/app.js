@@ -4,12 +4,12 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610191642';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610191642';
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202610221053';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202610221053';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, restoredPhoto, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall, widgetSupported, saveWidget, pinWidget,
-} from './native.js?v=202610191642';
+} from './native.js?v=202610221053';
 
 const $app = document.getElementById('app');
 let store;
@@ -276,6 +276,44 @@ function renderLanding() {
       st.ios && `<a class="btn" href="${esc(st.ios)}" rel="noopener">App Store에서 받기</a>`].filter(Boolean).join('');
     $s.classList.add('has-links');
   }
+  logLandingView();
+}
+
+// ───────── 유입 경로 (10/22, hb_017) ─────────
+// 블로그·커뮤니티 링크의 utm을 첫 방문 때 30일 기억해 두었다가 방을 만들 때 남긴다(트립N빵과 같은 방식).
+// 남기는 것: utm, 들어온 사이트 주소(호스트만), 앱인지 — 사람을 알아볼 수 있는 값은 없다
+const UTM_KEY = 'haru:utm';
+function rememberUtm() {
+  const q = new URLSearchParams(location.search);
+  const source = q.get('utm_source');
+  if (!source) return;
+  try {
+    const old = JSON.parse(localStorage.getItem(UTM_KEY) || 'null');
+    if (old && Date.now() - old.at < 30 * 864e5) return; // 첫 유입을 우선
+    localStorage.setItem(UTM_KEY, JSON.stringify({
+      source: source.slice(0, 40), medium: (q.get('utm_medium') || '').slice(0, 40), campaign: (q.get('utm_campaign') || '').slice(0, 40), at: Date.now(),
+    }));
+  } catch { /* 저장 불가 */ }
+}
+function firstTouch() {
+  try {
+    const u = JSON.parse(localStorage.getItem(UTM_KEY) || 'null');
+    if (u && Date.now() - u.at < 30 * 864e5) return { source: u.source, medium: u.medium, campaign: u.campaign, app: isApp };
+  } catch { /* 무시 */ }
+  return { source: '', app: isApp };
+}
+function logLandingView() {
+  try {
+    if (sessionStorage.getItem('haru:lv')) return;
+    sessionStorage.setItem('haru:lv', '1');
+  } catch { return; } // 저장이 안 되면 새로고침마다 쌓이므로 남기지 않는다
+  const q = new URLSearchParams(location.search);
+  let ref = '';
+  try { const h = document.referrer && new URL(document.referrer).host; if (h && h !== location.host) ref = h.slice(0, 60); } catch { /* 무시 */ }
+  store.logVisit?.({
+    source: (q.get('utm_source') || '').slice(0, 40), medium: (q.get('utm_medium') || '').slice(0, 40),
+    campaign: (q.get('utm_campaign') || '').slice(0, 40), ref, path: location.pathname.slice(0, 40),
+  });
 }
 
 // ───────── 홈 ─────────
@@ -318,6 +356,7 @@ function renderHome() {
         parentName: form.parentName.value.trim(), childName: form.childName.value.trim(), deadline: form.deadline.value,
       });
       me.set(r.id, r.memberId);
+      store.logSource?.(r.id, firstTouch()); // 시연용 가짜 저장소엔 없을 수 있다
       sessionStorage.setItem(`haru:fresh:${r.id}`, '1');
       location.hash = `#/f/${r.id}`;
     } catch (err) { toast(friendly(err)); btn.disabled = false; }
@@ -1164,6 +1203,7 @@ async function renderParent(token, justSent = false) {
 (async () => {
   store = await createStore(window.HARU_CONFIG);
   window.__haru = { store };
+  rememberUtm();
   // 사진을 찍는 사이 앱이 꺼졌으면 그 화면부터, 아이콘으로 켰으면(해시 없음) 마지막으로 본 화면부터
   const resumeAt = isApp ? await resumePhotoDraft() : null;
   const startAt = resumeAt || (isApp && (!location.hash || location.hash === '#/') ? lastView() : null);
