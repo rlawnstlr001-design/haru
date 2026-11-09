@@ -424,3 +424,15 @@ a.pp-btn { display: flex; align-items: center; justify-content: center; text-dec
 .partner-sent { margin: 10px 0 0; font-size: 18px; color: var(--muted); }
 .add-parent .chips { margin-bottom: 8px; }
 .pp-widget [hidden] { display: none !important; }
+
+/* 부모님 화면 미리보기 (0.6.5) */
+.preview-bar { position: sticky; top: env(safe-area-inset-top); z-index: 5; margin: 0; padding: 12px 14px; border-radius: 0 0 18px 18px; background: var(--navy-soft); color: var(--ink); box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+.preview-bar p { margin: 0 0 10px; font-size: 15px; line-height: 1.5; }
+.preview-bar .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.preview-bar .btn.sm { min-height: 42px; padding: 8px 14px; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; }
+.parent.preview { padding-top: 18px; }
+.pv-note { margin-top: 14px; }
+.call-hint { margin: 10px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--navy-soft); font-size: 15px; line-height: 1.5; word-break: keep-all; }
+.pv-next { padding-left: 34px; }
+.pv-steps { margin: 0; padding-left: 20px; line-height: 1.7; }
+.pv-next .btn { text-decoration: none; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }

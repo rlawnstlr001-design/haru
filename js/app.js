@@ -4,12 +4,13 @@
 //  #/f/<가족id>  자녀 화면: 부모님의 오늘, 7일, 하트, 형제 초대, 안부 부탁
 //  #/f/<가족id>/s 설정: 부모님 호칭·마감, 내 이름·알림
 //  #/p/<토큰>    부모님 화면: 큰 버튼 하나 + 사진·한마디(선택) + 받은 하트
-import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202611041427';
-import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202611041427';
+//  #/p/<토큰>/try  부모님 화면 미리보기(자녀용, 눌러도 보내지 않음 — 0.6.5)
+import { createStore, me, recentFamilies, localTz, forgetFamily } from './store.js?v=202611091154';
+import { esc, toast, friendly, share as webShare, pickPhoto, compressImage, joinNames, josa, timeLabel } from './util.js?v=202611091154';
 import {
   isApp, siteBase, nativeShare, haptic, pickPhotoNative, restoredPhoto, registerPush, initNative, exitApp, pushPermission, askReview,
   callSupported, callStatus, openCallSettings, testCall, widgetSupported, saveWidget, pinWidget,
-} from './native.js?v=202611041427';
+} from './native.js?v=202611091154';
 
 const $app = document.getElementById('app');
 let store;
@@ -203,6 +204,9 @@ const MOODS = [
   { id: 'tired', emoji: '😮‍💨', label: '피곤해요' },
 ];
 const moodOf = (id) => MOODS.find((m) => m.id === id);
+// 링크만 보내면 첫 안부까지 잘 안 간다(10/22: 링크 연 21번 → 첫 안부 4가족) — 전화하면서 같이 누르기를 권한다
+const linkSent = (pid) => { try { return !!localStorage.getItem(`haru:linksent:${pid}`); } catch { return false; } };
+const callHint = (p) => `<p class="call-hint">📞 링크를 보냈다면 ${esc(p.name)}께 전화해서 같이 열어 보세요. 통화하면서 기분 버튼 한 번이면 끝나요. <a href="parents.html" target="_blank" rel="noopener">큰 글씨 안내</a></p>`;
 const base = siteBase;
 // 앱이면 휴대폰 공유창, 웹이면 브라우저 공유 → 복사
 const share = async (p, msg) => (await nativeShare(p)) || webShare(p, msg);
@@ -246,6 +250,7 @@ async function route() {
   try {
     if ((m = h.match(/^\/f\/([\w-]+)\/s$/))) return await renderSettings(m[1]);
     if ((m = h.match(/^\/f\/([\w-]+)/))) return await renderFamily(m[1]);
+    if ((m = h.match(/^\/p\/([\w-]+)\/try$/))) return await renderParentPreview(m[1]);
     if ((m = h.match(/^\/p\/([\w-]+)/))) return await renderParent(m[1]);
     renderHome();
   } catch (e) {
@@ -461,7 +466,10 @@ async function renderFamily(fid) {
       <p class="kicker">처음 할 일</p>
       <h2>${esc(joinNames(freshOnes.map((s) => s.p.name)))}께 안부 링크를 보내 주세요</h2>
       <p>${multi ? '분마다 링크가 따로예요. ' : ''}링크를 누르시면 버튼 한 번, 사진 한 장으로 바로 안부를 보내실 수 있어요.</p>
-      ${freshOnes.map((s) => `<button class="btn primary block" data-send="${esc(s.p.id)}">💌 ${esc(s.p.name)}께 링크 보내기</button>`).join('')}
+      ${freshOnes.map((s) => `<button class="btn primary block" data-send="${esc(s.p.id)}">💌 ${esc(s.p.name)}께 링크 보내기</button>
+      ${linkSent(s.p.id) ? callHint(s.p) : ''}
+      <a class="btn ghost block" href="#/p/${esc(s.p.token)}/try">👀 ${esc(s.p.name)} 화면 먼저 눌러 보기</a>`).join('')}
+      <p class="muted small">보내기 전에 ${multi ? '부모님' : esc(freshOnes[0].p.name)} 화면이 어떻게 보이는지 직접 눌러 볼 수 있어요. 미리보기에서 누른 건 보내지지 않아요.</p>
       <button class="btn ghost block" id="invite">👨‍👩‍👧 형제 초대하기</button>
       ${canAdd && !multi ? `<p class="muted small add-hint">두 분이 따로 사시나요? <a href="#/f/${esc(fid)}/s">부모님 한 분 더 모시기</a></p>` : ''}
     </section>` : ''}
@@ -491,7 +499,8 @@ async function renderFamily(fid) {
       <div class="avatars">${f.members.map((m, i) => `<div class="avatar"><i style="--c:${AVATAR_COLORS[i % AVATAR_COLORS.length]}">${esc([...m.name][0] || '?')}</i><span>${esc(m.name)}${m.id === myId ? ' (나)' : ''}</span></div>`).join('')}</div>
       <div class="pill-row">
         <button class="pill" id="invite2">👨‍👩‍👧 형제 초대</button>
-        ${f.parents.map((p) => `<button class="pill" data-send="${esc(p.id)}">💌 ${esc(p.name)} 링크 다시 보내기</button>`).join('')}
+        ${f.parents.map((p) => `<button class="pill" data-send="${esc(p.id)}">💌 ${esc(p.name)} 링크 다시 보내기</button>
+          <a class="pill" href="#/p/${esc(p.token)}/try">👀 ${esc(p.name)} 화면 미리보기</a>`).join('')}
         ${canAdd ? `<a class="pill" href="#/f/${esc(fid)}/s">➕ 부모님 한 분 더</a>` : ''}
       </div>
     </section>
@@ -499,6 +508,10 @@ async function renderFamily(fid) {
 
   const parentOf = (pid) => f.parents.find((p) => p.id === pid) || f.parents[0];
   const sendParent = (p) => {
+    // 링크를 보낸 뒤 할 일(전화해서 같이 누르기)을 바로 그 자리에 보여 준다 — 처음 할 일 카드가 있을 때만
+    try { localStorage.setItem(`haru:linksent:${p.id}`, '1'); } catch { /* 무시 */ }
+    const sendBtn = $app.querySelector(`.setup [data-send="${p.id}"]`);
+    if (sendBtn && !sendBtn.nextElementSibling?.classList.contains('call-hint')) sendBtn.insertAdjacentHTML('afterend', callHint(p));
     store.log(fid, 'parent_link_shared');
     sessionStorage.removeItem(`haru:fresh:${fid}`);
     share({ text: `${p.name}! 이제 매일 이 링크로 안부 보내 주세요 💛\n버튼 한 번이면 돼요. 사진도 보낼 수 있어요.`, url: parentLink(p.token) },
@@ -1195,6 +1208,55 @@ async function renderParent(token, justSent = false) {
       b.disabled = true;
       try { if (await store.parentHeart(token, v.familyId, b.dataset.pheart)) haptic(120); await renderParent(token); }
       catch (e) { toast(friendly(e)); b.disabled = false; }
+    };
+  });
+}
+
+// ───────── 부모님 화면 미리보기 (0.6.5, 11/4) ─────────
+// 테스터 대부분이 부모님 없이 시험했고(10/22 지표: 링크 연 21번 → 첫 안부 4가족), 자녀가 부모님 화면을 본 적이 없어
+// 전화로 설명하기 어렵다 → 자녀가 자기 폰에서 똑같은 화면을 눌러 본다. 서버에는 아무것도 보내지 않는다(기분·하트·사진 모두).
+async function renderParentPreview(token, sentMood = null) {
+  const v = await store.parentView(token);
+  if (location.hash !== `#/p/${token}/try`) return;
+  view = null; // 미리보기는 자동 새로고침하지 않는다(누른 결과가 지워지지 않게)
+  const P = v.parentName;
+  const kids = joinNames(v.children);
+  const m = sentMood && moodOf(sentMood);
+  if (!sentMood && !sessionStorage.getItem(`haru:ptry:${token}`)) { sessionStorage.setItem(`haru:ptry:${token}`, '1'); store.log(v.familyId, 'parent_preview'); }
+  $app.innerHTML = `
+    <div class="preview-bar" role="note">
+      <p>👀 <b>미리보기</b> — ${esc(josa(P, '이/가'))} 보시는 화면이에요. 여기서 누른 건 보내지지 않아요.</p>
+      <div class="row"><a class="btn sm" href="#/f/${esc(v.familyId)}">← 가족 방으로</a>
+        <button type="button" class="btn sm primary" data-pv-send>💌 ${esc(P)}께 이 링크 보내기</button></div>
+    </div>
+    <div class="parent preview">
+      <p class="date">${esc(dateLabel(v.today))}</p>
+      <h1 class="greet">${esc(P)},<br>오늘 하루 어떠세요?</h1>
+      ${m ? `<section class="sent-card pop">
+          <p class="sent-title">💛 ${esc(kids || '자녀들')}에게 전했어요</p>
+          <p class="muted">${esc(m.emoji)} ${esc(m.label)} — ${esc(P)}께서 누르시면 이렇게 보이고, 형제들에게 알림이 가요. 하트를 받으면 여기에 떠요.</p>
+        </section>
+        <section class="letter-card pv-next">
+          <p class="kicker">이제 진짜로</p>
+          <h2>${esc(P)}께 전화해서 같이 눌러 보세요</h2>
+          <ol class="pv-steps"><li>${esc(P)}께 전화를 걸어요</li><li>아래 버튼으로 링크를 카톡에 보내요</li><li>통화하면서 같이 열고, 기분 버튼을 한 번 눌러 보시게 해요</li></ol>
+          <button type="button" class="btn primary block" data-pv-send>💌 ${esc(P)}께 링크 보내기</button>
+          <a class="btn ghost block" href="#/p/${esc(token)}">혼자 시험해 볼래요 (진짜로 한 번 보내 보기)</a>
+          <p class="muted small">혼자 시험하면 내 가족 방에 ${esc(P)} 안부로 기록돼요.</p>
+        </section>` : ''}
+      <p class="ask">${m ? '더 보내고 싶으시면 눌러 주세요' : '기분 하나만 눌러도 돼요'}</p>
+      <div class="mood-tiles">${MOODS.map((x) => `<button class="mood-tile ${x.id}" data-mood="${x.id}"><span class="e">${x.emoji}</span><span>${x.label}</span></button>`).join('')}</div>
+      <p class="muted small pv-note">📷 사진·한마디도 같이 보내실 수 있어요(실제 ${esc(P)} 화면에서). 앱을 깔면 정한 시각에 "오늘 하루 어떠세요?" 알림이 가요.</p>
+      <p class="muted small pv-note">통화하면서 같이 링크를 열고 한 번 눌러 보시게 하면 가장 잘 돼요. 큰 글씨 안내: <a href="parents.html" target="_blank" rel="noopener">부모님 안내 페이지</a></p>
+    </div>`;
+  $app.querySelectorAll('[data-mood]').forEach((b) => {
+    b.onclick = () => { haptic(60); renderParentPreview(token, b.dataset.mood); scrollTo({ top: 0, behavior: 'smooth' }); };
+  });
+  $app.querySelectorAll('[data-pv-send]').forEach((b) => {
+    b.onclick = () => {
+      store.log(v.familyId, 'parent_link_shared');
+      share({ text: `${P}! 이제 매일 이 링크로 안부 보내 주세요 💛\n버튼 한 번이면 돼요. 사진도 보낼 수 있어요.`, url: parentLink(token) },
+        '링크를 복사했어요. 카톡에 붙여 넣으세요');
     };
   });
 }
